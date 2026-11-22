@@ -447,3 +447,40 @@ b{font-weight:900}
 .chance-icon.hit{animation:chanceHit .5s cubic-bezier(.3,1.8,.5,1)}
 @keyframes chanceHit{0%{transform:scale(.4)}100%{transform:scale(1)}}
 .chance-text{font-weight:900;font-size:20px;text-align:center;margin:10px 0 0}
+
+/* ==========================================================
+   決闘（部首しんけいすいじゃく）
+   ========================================================== */
+.duel-sheet{width:min(640px,100%)}
+.dl-head{display:flex;align-items:center;justify-content:center;gap:12px}
+.dl-p{display:flex;align-items:center;gap:6px;padding:4px 12px 4px 4px;border:3px solid var(--ink);border-radius:999px;background:#fff;opacity:.6;transition:opacity .2s, transform .2s}
+.dl-p.now{opacity:1;transform:scale(1.06);background:#FFF3C4;box-shadow:0 3px 0 var(--ink)}
+.dl-p .ava{width:36px;height:36px}
+.dl-p b{font-size:15px;max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-p i{font-style:normal;font-family:var(--pop);font-size:22px;color:#E8A100;-webkit-text-stroke:.6px var(--ink)}
+.dl-vs{font-family:var(--pop);font-size:20px;color:var(--red)}
+.dl-msg{min-height:2.8em;margin:8px 0 4px;text-align:center;font-weight:900;font-size:16px}
+.dl-hit b{font-family:"Klee One",var(--font);font-size:26px}
+.dl-hit em{font-style:normal;font-family:"Klee One",var(--font);font-size:34px;color:var(--red)}
+.dl-board{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:420px;margin:6px auto}
+.mc{aspect-ratio:4/5;border:0;padding:0;background:none;perspective:700px;cursor:default}
+.dl-board.can .mc:not(.up){cursor:pointer}
+.dl-board.can .mc:not(.up) .mc-back{animation:mcWiggle 2.2s ease-in-out infinite}
+.mc-in{position:relative;display:block;width:100%;height:100%;transform-style:preserve-3d;transition:transform .35s ease}
+.mc.up .mc-in{transform:rotateY(180deg)}
+.mc-back,.mc-face{position:absolute;inset:0;border:3px solid var(--ink);border-radius:16px;box-shadow:0 4px 0 var(--ink);backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.mc-back{background:repeating-linear-gradient(45deg,#8FB8FF 0 10px,#7AA8F5 10px 20px);font-family:var(--pop);font-size:38px;color:#fff;-webkit-text-stroke:2px var(--ink);paint-order:stroke}
+.mc-face{transform:rotateY(180deg);background:#fff}
+.mc-face b{font-family:"Klee One",var(--font);font-weight:600;font-size:52px;line-height:1.1}
+.mc-face small{font-size:12px;font-weight:900;color:var(--ink-2)}
+.mc-face em{position:absolute;top:6px;left:6px;font-style:normal;font-size:11px;font-weight:900;background:#4FA8FF;color:#fff;border-radius:999px;padding:0 7px}
+.mc.bushu .mc-face{background:#EEF6FF}
+.mc.got .mc-face{border-color:var(--c);box-shadow:0 0 0 3px var(--c), 0 4px 0 var(--ink);opacity:.85}
+@keyframes mcWiggle{0%,85%,100%{transform:none}90%{transform:rotate(-2deg)}95%{transform:rotate(2deg)}}
+.dl-rule{text-align:center;font-size:12.5px;color:var(--ink-2);margin:6px 0 0}
+.dl-list{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:6px}
+.dl-made{font-weight:900;font-size:16px}
+.dl-made b{font-family:"Klee One",var(--font);font-size:24px;margin:0 2px}
+.dl-made small{font-size:11px;color:var(--ink-2);margin-right:4px}
+.dl-made em{font-style:normal;font-family:"Klee One",var(--font);font-size:28px;color:var(--red);margin-left:4px}
+@media (max-width:700px){ .mc-face b{font-size:40px} .dl-board{gap:8px} }

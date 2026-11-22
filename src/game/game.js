@@ -10,6 +10,7 @@ import { makeBag, isCorrect, hasKanji, pointsFor } from './questions.js';
 import { CARDS, HAND_MAX, drawCard, shopItems, cardHTML, backHTML, timingText, miniDie } from './cards.js';
 import { planAnswer, planCard, planCounter, planShop, planDiscard } from './cpu.js';
 import { rand, seedRng, newSeed } from './rng.js';
+import { pickPairs, makeBoard, cpuFlip } from './duel.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -334,6 +335,7 @@ async function rollAndGo(p, mods) {
   await wait(300);
   await move(p, n, { shops: true });
   if (p.pos >= GOAL) return reachGoal(p);
+  if (await maybeDuel(p)) return;   // 決闘に 負けて もどったら マスの できごとは なし
   return tileEvent(p);
 }
 
@@ -754,6 +756,159 @@ async function shop(p, { rest = 0 } = {}) {
   await wait(500);
 }
 
+
+/* ---------- 決闘（部首しんけいすいじゃく） ---------- */
+// 同じマスに 止まったら 決闘。勝った人が ポイントを うばい、負けた人は 2マス もどる
+const DUEL_PTS = 20;
+// もどり値：true＝番の人が 負けて もどった（このあとの マスの できごとは なし）
+async function maybeDuel(p) {
+  if (S.ended || p.pos <= 0 || p.pos >= GOAL) return false;
+  const there = S.players.filter(q => q !== p && q.pos === p.pos);
+  if (!there.length) return false;
+  const foe = there.sort((a, b) => b.points - a.points || a.i - b.i)[0];
+  const { winner, pairs, got } = await duel(p, foe);
+  const loser = winner === p ? foe : p;
+  const amt = Math.min(DUEL_PTS, loser.points);
+  const list = pairs.map(x => `<span class="dl-made"><b>${x.bushu}</b><small>${x.name}</small>＋<b>${x.rest}</b>＝<em>${x.kanji}</em></span>`).join('');
+  sfx('win');
+  await dlg(au({
+    tone: 'good', title: `${esc(winner.name)} の かち！`,
+    body: `<div class="vs">${ava(winner, 'lg')}<span class="vs-arrow">${got[winner.i]} − ${got[loser.i]}</span>${ava(loser, 'lg')}</div>
+      <p><b>${esc(winner.name)}</b> は ${amt ? `<b>${esc(loser.name)}</b> から ${amt}ポイント ゲット！` : `${esc(loser.name)} が ポイントを もっていなかった…`}<br><b>${esc(loser.name)}</b> は 2マス もどる</p>
+      <div class="dl-list">${list}</div>`,
+    buttons: [{ label: 'つぎへ', value: true, kind: 'primary' }],
+  }, 3200));
+  loser.points -= amt;
+  winner.points += amt;
+  paintPlayers();
+  bump(winner.i); bump(loser.i);
+  if (amt) { floater(winner.i, `＋${amt}`); floater(loser.i, `−${amt}`, true); sfx('point'); }
+  await lookAt(loser.i, 500);
+  sfx('hit');
+  Stage.sad(loser.i);
+  await wait(300);
+  await move(loser, -2);
+  toast(`${loser.name} は 2マス もどった`, 'bad');
+  await wait(900);
+  lookBack();
+  return loser === p;
+}
+
+async function duel(a, b) {
+  const id = gameId;
+  sfx('boom');
+  await lookAt(b.i, 300);
+  await splash(`<div class="vs">${ava(a, 'lg')}<span class="vs-arrow">VS</span>${ava(b, 'lg')}</div><div class="big">決闘！</div><div class="big small">部首しんけいすいじゃく</div>`);
+  lookBack();
+  const pairs = pickPairs(S.settings.grade);
+  const cards = makeBoard(pairs);
+  const taken = Array(cards.length).fill(-1);   // とった人の 番号
+  const seen = new Set();                        // いちど めくられた カード（CPU が 覚える）
+  const got = { [a.i]: 0, [b.i]: 0 };
+  let up = [];                                   // いま 表の カード
+  let tapResolve = null;
+  const face = (c, i) => {
+    const x = pairs[c.pair];
+    const inner = c.side === 'bushu'
+      ? `<b>${x.bushu}</b><small>${x.name}</small><em>部首</em>`
+      : `<b>${x.rest}</b>`;
+    const who = taken[i] >= 0 ? S.players[taken[i]] : null;
+    return `<button type="button" class="mc ${up.includes(i) || who ? 'up' : ''} ${who ? 'got' : ''} ${c.side}" data-i="${i}" ${who ? `style="--c:${charDef(who.char).ui}"` : ''}>
+      <span class="mc-in"><span class="mc-back">？</span><span class="mc-face">${inner}</span></span></button>`;
+  };
+  const head = (turn, text) => `
+    <div class="dl-head">
+      <span class="dl-p ${turn === a ? 'now' : ''}">${ava(a)}<b>${esc(a.name)}</b><i>${got[a.i]}</i></span>
+      <span class="dl-vs">VS</span>
+      <span class="dl-p ${turn === b ? 'now' : ''}">${ava(b)}<b>${esc(b.name)}</b><i>${got[b.i]}</i></span>
+    </div>
+    <p class="dl-msg">${text}</p>`;
+  let ctrl = null;
+  const done = dlg({
+    tone: 'card', cls: 'wide duel-sheet', title: '決闘！ 部首しんけいすいじゃく',
+    body: `<div class="dl-top"></div><div class="dl-board">${cards.map(face).join('')}</div><p class="dl-rule">「部首」と もう1まいで 1つの 漢字が できたら ゲット！ ゲットしたら もう1回</p>`,
+    buttons: [],
+    mount: (el, finish) => {
+      ctrl = { el, finish };
+      el.addEventListener('click', e => {
+        const c = e.target.closest('.mc');
+        if (!c || !tapResolve) return;
+        const i = Number(c.dataset.i);
+        if (taken[i] >= 0 || up.includes(i)) return;
+        const r = tapResolve;
+        tapResolve = null;
+        r(i);
+      });
+    },
+  });
+  done.catch(() => {});
+  const guard = pr => Promise.race([pr, done.then(() => { throw new Abort(); })]);
+  const draw = (turn, text) => {
+    ctrl.el.querySelector('.dl-top').innerHTML = head(turn, text);
+    const bd = ctrl.el.querySelector('.dl-board');
+    bd.innerHTML = cards.map(face).join('');
+    bd.classList.toggle('can', !!tapResolve);
+  };
+  const local = p => !p.cpu && (!NET || NET.isMe(p));
+  // 1まい えらぶ（CPU・この iPad の人・ほかの iPad の人）
+  async function pick(p) {
+    for (;;) {
+      if (p.cpu) {
+        await wait(750);
+        return cpuFlip(p.cpu, cards, taken.map(t => t >= 0), seen, up.length ? up[0] : null);
+      }
+      if (local(p)) {
+        const pr = new Promise(r => { tapResolve = r; });
+        draw(p, `${NET ? 'あなた' : esc(p.name) + ' さん'}の 番：カードを ${up.length ? 'もう1まい' : '2まい'} めくろう`);
+        const i = await guard(pr);
+        tapResolve = null;
+        chk(id);
+        if (!NET) return i;
+        const e = await NET.commit('flip', i);
+        chk(id);
+        if (e.k === 'leave') { leaveTo(e); continue; }
+        return e.v;
+      }
+      const e = await guard(NET.next(p));
+      chk(id);
+      if (e.k === 'leave') { leaveTo(e); continue; }
+      return e.v;
+    }
+  }
+  let turn = a;
+  while (got[a.i] + got[b.i] < pairs.length) {
+    draw(turn, local(turn) ? '' : `${esc(turn.name)}${turn.cpu ? '（CPU）' : ' さん'}が めくっています…`);
+    up = [];
+    const i1 = await pick(turn);
+    up = [i1]; seen.add(i1); sfx('card');
+    draw(turn, '');
+    const i2 = await pick(turn);
+    up = [i1, i2]; seen.add(i2); sfx('card');
+    draw(turn, '');
+    await wait(700);
+    const c1 = cards[i1], c2 = cards[i2];
+    if (c1.pair === c2.pair) {
+      const x = pairs[c1.pair];
+      taken[i1] = taken[i2] = turn.i;
+      got[turn.i]++;
+      up = [];
+      sfx('good');
+      draw(turn, `<span class="dl-hit"><b>${x.bushu}</b>（${x.name}）＋ <b>${x.rest}</b> ＝ <em>${x.kanji}</em></span><br>${esc(turn.name)} が ゲット！`);
+      await wait(1600);
+    } else {
+      sfx('bad');
+      draw(turn, 'ざんねん… 漢字に ならない');
+      await wait(1100);
+      up = [];
+      turn = turn === a ? b : a;
+    }
+  }
+  const winner = got[a.i] > got[b.i] ? a : b;
+  ctrl.finish(true);
+  await done;
+  return { winner, pairs, got };
+}
+
 /* ---------- マスのできごと ---------- */
 async function tileEvent(p) {
   const type = Stage.tileType(p.pos);
@@ -781,6 +936,7 @@ async function tileEvent(p) {
       await wait(800);
       await move(p, 2, { shops: true });
       if (p.pos >= GOAL) return reachGoal(p);
+      await maybeDuel(p);
       break;
     case 'back':
       toast('もどるマス… 2マス もどる', 'bad');
@@ -853,6 +1009,7 @@ async function chance(p) {
     case 'go3':
       await move(p, 3, { shops: true });
       if (p.pos >= GOAL) return reachGoal(p);
+      await maybeDuel(p);
       break;
     case 'gift': {
       let got = 0;

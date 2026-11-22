@@ -161,6 +161,8 @@ function openHowto() {
       <p class="ht-note">「ぜんたい」で 島を 見わたせます。ゆびで なぞると 島が 回り、2本の ゆびで 大きく・小さく できます。</p>
       <h3 class="ht">マスの しゅるい</h3>
       <div class="sq-legend">${sq.map(([c, l, d]) => `<div class="sq"><i style="background:${c}">${l}</i><span>${d}</span></div>`).join('')}</div>
+      <h3 class="ht">決闘</h3>
+      <p class="ht-note">ほかの人が いる マスに 止まったら「部首しんけいすいじゃく」で 決闘！ 6まいの カードを 2まいずつ めくって、部首と もう1まいで 漢字が できたら ゲット（ゲットしたら もう1回）。多く ゲットした人の かちで、あいてから 20ポイント もらえる。負けた人は 2マス もどる。</p>
       <h3 class="ht">カード</h3>
       <p class="ht-note">手札は 3まいまで。はじめに 1まい もらえる。自分の番に、サイコロの前なら 何まいでも 使える（サイコロの カードは 使うと すぐ ふる）。<br>「反撃」の カードは、あいてに こうげきされたとき 使える。</p>
       <div class="card-legend">${cards}</div>
