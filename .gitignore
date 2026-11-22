@@ -4,3 +4,4 @@ dist/
 # 仕様書・メモ・前の版は 公開しない
 docs/
 archive/
+__pycache__/
