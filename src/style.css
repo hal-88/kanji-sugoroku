@@ -141,32 +141,10 @@ b{font-weight:900}
 
 /* ---------- 日本のサイコロ（1だけ大きな赤い点） ---------- */
 .dice-pop{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%) scale(.3);opacity:0;pointer-events:none;z-index:35;
-  display:flex;gap:26px;transition:transform .35s cubic-bezier(.3,1.7,.5,1), opacity .2s}
+  transition:transform .35s cubic-bezier(.3,1.7,.5,1), opacity .2s}
 .dice-pop.show{transform:translate(-50%,-50%) scale(1);opacity:1}
-.die{--d:120px;--h:calc(var(--d) / 2);width:var(--d);height:var(--d);perspective:600px;position:relative}
-.die::after{content:"";position:absolute;left:6%;right:6%;bottom:-16px;height:16px;border-radius:50%;background:rgba(43,34,51,.25);filter:blur(4px);z-index:-1}
-.die.rolling{animation:dieHop 1.1s ease-out}
-@keyframes dieHop{0%{transform:translateY(-70px)}28%{transform:translateY(0)}46%{transform:translateY(-26px)}64%{transform:translateY(0)}80%{transform:translateY(-7px)}100%{transform:none}}
-/* 真上から見る（止まったら出た目がまっすぐこちらを向く） */
-.die .tilt{width:100%;height:100%;transform-style:preserve-3d;transform:none}
-.die .cube{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform 1.1s cubic-bezier(.15,.7,.25,1)}
-.die .face{
-  position:absolute;inset:0;border-radius:24%;
-  background:radial-gradient(circle at 32% 28%, #FFFFFF 0%, #FBF7EF 55%, #EFE6D6 100%);
-  box-shadow:inset 0 0 0 3px #2B2233, inset 0 -8px 14px rgba(0,0,0,.08);
-  display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);padding:16%;
-  backface-visibility:hidden;-webkit-backface-visibility:hidden;
-}
-.die .face i{width:74%;height:74%;margin:auto;border-radius:50%;
-  background:radial-gradient(circle at 40% 35%, #4A4150, #1E1824);box-shadow:inset 0 3px 3px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.8)}
-.die .f1 i{grid-area:1 / 1 / 4 / 4 !important;width:58%;height:58%;background:radial-gradient(circle at 40% 35%, #FF5A55, #C8161D)}
-.die .f1{transform:translateZ(var(--h))}
-.die .f6{transform:rotateY(180deg) translateZ(var(--h))}
-.die .f3{transform:rotateY(90deg) translateZ(var(--h))}
-.die .f4{transform:rotateY(-90deg) translateZ(var(--h))}
-.die .f2{transform:rotateX(90deg) translateZ(var(--h))}
-.die .f5{transform:rotateX(-90deg) translateZ(var(--h))}
-.die-sum{position:absolute;left:50%;top:calc(100% + 34px);transform:translateX(-50%);white-space:nowrap;
+.dice-canvas{display:block}
+.die-sum{position:absolute;left:50%;top:calc(100% - 6px);transform:translateX(-50%);white-space:nowrap;
   font-family:var(--pop);font-size:34px;color:#fff;-webkit-text-stroke:2px var(--ink);paint-order:stroke;opacity:0;transition:opacity .2s}
 .die-sum.show{opacity:1}
 
@@ -286,7 +264,6 @@ b{font-weight:900}
   .turn-banner{font-size:15px;min-height:48px}
   .turn-banner .ava{width:38px;height:38px}
   #btn-view{display:none}
-  .die{--d:88px}
   .sheet{padding:18px 16px}
   .s-title{font-size:32px}
   .r-word{font-size:46px}
@@ -302,7 +279,6 @@ b{font-weight:900}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
   .hanamaru path{stroke-dashoffset:0}
-  .die .cube{transition:none}
 }
 
 /* ==========================================================
@@ -460,3 +436,14 @@ b{font-weight:900}
 .watch-note{color:var(--ink-2)}
 .q-sheet.cpu .q-form .btn,.q-sheet.cpu .q-pass{opacity:.35}
 .pill:disabled{opacity:.4;box-shadow:none;transform:none}
+
+/* ==========================================================
+   マップえらび・チャンスマス
+   ========================================================== */
+.map-seg button{display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15;padding:4px 2px}
+.map-seg button small{font-size:10.5px;font-weight:700;opacity:.8}
+.chance-reel{display:grid;place-items:center;margin:6px auto 4px;width:120px;height:120px;border:4px solid var(--ink);border-radius:28px;background:#FFF0FA;box-shadow:0 6px 0 var(--ink)}
+.chance-icon{font-size:64px;line-height:1}
+.chance-icon.hit{animation:chanceHit .5s cubic-bezier(.3,1.8,.5,1)}
+@keyframes chanceHit{0%{transform:scale(.4)}100%{transform:scale(1)}}
+.chance-text{font-weight:900;font-size:20px;text-align:center;margin:10px 0 0}

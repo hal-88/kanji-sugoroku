@@ -38,7 +38,7 @@ function wrongYomi(q) {
 // マスの よさ（えらべるサイコロで どこに 止まるか）
 function tileValue(p, pos) {
   if (pos >= GOAL) return 100;
-  return { card: 3, point: 2, fwd: 2, shop: p.points >= 15 ? 2 : 0, minus: -2, back: -3 }[tileType(pos)] || 0;
+  return { card: 3, point: 2, fwd: 2, again: 3, chance: 1.5, shop: p.points >= 15 ? 2 : 0, minus: -2, back: -3 }[tileType(pos)] || 0;
 }
 // 手がたい人ほど 反撃カードを 持っているかも
 const risk = q => (q.cards.length ? 0.7 : 1);

@@ -18,7 +18,7 @@ setPortraits(portraits);
 /* ---------- 設定（この端末に覚えておく） ---------- */
 const KEY = 'kanji-sugoroku-3d';
 const DEFAULTS = {
-  count: 2, grade: 4, time: 20,
+  count: 2, grade: 4, time: 20, map: 'normal',
   players: CHARACTERS.map(c => ({ char: c.id, name: '' })),
 };
 let setup = structuredClone(DEFAULTS);
@@ -36,7 +36,7 @@ const face = id => {
 // ひと → CPU よわい → ふつう → つよい の じゅんに かわる
 const WHO = ['ひと', 'CPU<small>よわい</small>', 'CPU<small>ふつう</small>', 'CPU<small>つよい</small>'];
 function renderSetup() {
-  $$('.seg').forEach(seg => $$('button', seg).forEach(b => b.setAttribute('aria-pressed', String(String(setup[seg.dataset.key]) === b.dataset.v))));
+  $$('.seg[data-key]').forEach(seg => $$('button', seg).forEach(b => b.setAttribute('aria-pressed', String(String(setup[seg.dataset.key]) === b.dataset.v))));
   const rows = $('#player-rows');
   rows.innerHTML = setup.players.slice(0, setup.count).map((p, i) => `
     <div class="prow" data-i="${i}">
@@ -46,13 +46,14 @@ function renderSetup() {
       <button type="button" class="who ${p.cpu ? 'is-cpu' : ''}" title="タップで ひと／CPU を かえる">${WHO[p.cpu || 0]}</button>
     </div>`).join('');
 }
-$$('.seg').forEach(seg => seg.addEventListener('click', e => {
+$$('.seg[data-key]').forEach(seg => seg.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   sfx('tap');
-  setup[seg.dataset.key] = Number(b.dataset.v);
+  setup[seg.dataset.key] = /^\d+$/.test(b.dataset.v) ? Number(b.dataset.v) : b.dataset.v;
   save();
   renderSetup();
+  if (seg.dataset.key === 'map') Stage.setMap(setup.map);   // うしろの 島も かわる
 }));
 $('#player-rows').addEventListener('click', e => {
   const w = e.target.closest('.who');
@@ -82,16 +83,17 @@ $('#player-rows').addEventListener('input', e => {
   save();
 });
 renderSetup();
+Stage.setMap(setup.map);
 
 /* ---------- 画面の切りかえ ---------- */
 function showScreen(name) { $$('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name)); }
-function backToTitle() { showScreen('title'); renderSetup(); }
+function backToTitle() { showScreen('title'); renderSetup(); Stage.setMap(setup.map); }
 
 $('#btn-start').addEventListener('click', () => {
   unlockSound();
   sfx('tap');
   showScreen('game');
-  startGame({ grade: setup.grade, time: setup.time, players: setup.players.slice(0, setup.count).map(p => ({ ...p })) }, backToTitle);
+  startGame({ grade: setup.grade, time: setup.time, map: setup.map, players: setup.players.slice(0, setup.count).map(p => ({ ...p })) }, backToTitle);
 });
 $('#btn-roll').addEventListener('click', pressRoll);
 
@@ -142,6 +144,8 @@ function openHowto() {
     ['#FFA45C', '−2', '2マス もどる'],
     ['#FFD45C', 'カード', 'カードが 1まい もらえる'],
     ['#C39BFF', 'お店', 'カードを 買える。通りすぎる ときも かならず よる'],
+    ['#FF9AD5', 'チャンス', 'なにが おきるかは 運しだい（いいことが 多い）'],
+    ['#5FD3C8', 'もう1回', 'もう1回 サイコロを ふれる'],
   ];
   const cards = CARD_IDS.map(id => `<div class="cl">${cardHTML(id, { cls: 'mini' })}<div><b>${CARDS[id].name}</b>（${CARDS[id].price}ポイント）<br>${CARDS[id].desc}<small>${timingText(id)}</small></div></div>`).join('');
   upper.dialog({
@@ -154,6 +158,7 @@ function openHowto() {
         <li><span class="st-n">4</span><div><b>とまった マスで できごと</b>　まちがえたら その場で ストップ</div></li>
         <li><span class="st-n">5</span><div><b>いちばん先に お城（ゴール）に ついた人の かち！</b></div></li>
       </ol>
+      <p class="ht-note">「ぜんたい」で 島を 見わたせます。ゆびで なぞると 島が 回り、2本の ゆびで 大きく・小さく できます。</p>
       <h3 class="ht">マスの しゅるい</h3>
       <div class="sq-legend">${sq.map(([c, l, d]) => `<div class="sq"><i style="background:${c}">${l}</i><span>${d}</span></div>`).join('')}</div>
       <h3 class="ht">カード</h3>

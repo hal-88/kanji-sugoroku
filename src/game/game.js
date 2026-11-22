@@ -125,6 +125,7 @@ export function startGame(settings, exitTo, net = null) {
     current: 0, phase: 'busy', ended: false, actionResolve: null,
     bag: makeBag(settings.grade),
   };
+  Stage.setMap(settings.map || 'normal');
   Stage.setPlayers(S.players.map(p => p.char));
   Stage.setView('follow');
   paintPlayers();
@@ -272,11 +273,24 @@ async function playTurn(p) {
     if (r && r.roll) { mods = r; break; }
   }
 
+  // もう1回マスに とまったら、もう1回 サイコロ（1回の番で 3回まで）
+  for (let extra = 0; extra < 3; extra++) {
+    const r = await rollAndGo(p, extra ? { count: 1, six: false, values: null } : mods);
+    chk(id);
+    if (r !== 'again' || S.ended) return;
+    sfx('turn');
+    await splash(`${ava(p, 'lg')}<div class="big">もう1回 サイコロ！</div>`);
+  }
+}
+
+// サイコロ → 漢字の問題 → 正解なら 進む → マスの できごと（もどり値：'again'＝もう1回マス）
+async function rollAndGo(p, mods) {
+  const id = gameId;
   setRollReady(false);
   renderHand();
   const want = mods.values || Array.from({ length: mods.count }, () => (mods.six ? 6 : 1 + Math.floor(rand() * 6)));
   const vals = await rollDice(want.length, { values: want });
-  chk(id);
+  chk(gameId);
   const n = vals.reduce((a, b) => a + b, 0);
 
   const q = S.bag.next();
@@ -315,7 +329,7 @@ async function playTurn(p) {
   await wait(300);
   await move(p, n, { shops: true });
   if (p.pos >= GOAL) return reachGoal(p);
-  await tileEvent(p);
+  return tileEvent(p);
 }
 
 // shops:true のときは、とちゅうの お店で かならず 止まって 買い物 → のこりを 進む
@@ -774,6 +788,87 @@ async function tileEvent(p) {
       break;
     case 'shop':
       await shop(p);
+      break;
+    case 'chance':
+      return chance(p);
+    case 'again':
+      floater(p.i, 'もう1回！');
+      toast('もう1回マス！ もう1回 サイコロを ふれる', 'good');
+      await wait(1100);
+      return 'again';
+  }
+}
+
+// チャンスマス：なにが おきるかは 運しだい（運のたね から えらぶので オンラインでも 同じ）
+const CHANCES = [
+  { id: 'pts20', w: 3, icon: '💰', text: '＋20ポイント！' },
+  { id: 'card', w: 3, icon: '🃏', text: 'カードを 1まい もらえる！' },
+  { id: 'go3', w: 2, icon: '👟', text: '3マス 進む！' },
+  { id: 'gift', w: 2, icon: '🎁', text: 'みんなから 5ポイントずつ もらえる！' },
+  { id: 'back3', w: 1, icon: '🌀', text: '3マス もどる…' },
+  { id: 'rest', w: 1, icon: '💤', text: 'つぎの番は 1回休み…' },
+];
+async function chance(p) {
+  const total = CHANCES.reduce((a, c) => a + c.w, 0);
+  let r = rand() * total, pick = CHANCES[0];
+  for (const c of CHANCES) { r -= c.w; if (r <= 0) { pick = c; break; } }
+  sfx('card');
+  await dlg(au({
+    tone: 'card', title: 'チャンス！',
+    body: `<div class="chance-reel"><span class="chance-icon">❔</span></div><p class="chance-text">なにが おきるかな…？</p>`,
+    buttons: [{ label: 'OK', value: true, kind: 'primary' }],
+    mount: el => {
+      // くるくる 回って 止まる
+      const ic = el.querySelector('.chance-icon'), tx = el.querySelector('.chance-text');
+      const btn = el.querySelector('.s-actions .btn');
+      if (btn) btn.disabled = true;
+      let k = 0;
+      const iv = setInterval(() => { ic.textContent = CHANCES[k++ % CHANCES.length].icon; sfx('tick'); }, 90);
+      const t = setTimeout(() => {
+        clearInterval(iv);
+        ic.textContent = pick.icon;
+        ic.classList.add('hit');
+        tx.textContent = pick.text;
+        sfx(pick.id === 'back3' || pick.id === 'rest' ? 'bad' : 'good');
+        if (btn) btn.disabled = false;
+      }, 1300);
+      return () => { clearInterval(iv); clearTimeout(t); };
+    },
+  }, 3000));
+  switch (pick.id) {
+    case 'pts20':
+      p.points += 20;
+      floater(p.i, '＋20');
+      sfx('point');
+      paintPlayers(); bump(p.i);
+      await wait(900);
+      break;
+    case 'card':
+      await gainCard(p, drawCard());
+      break;
+    case 'go3':
+      await move(p, 3, { shops: true });
+      if (p.pos >= GOAL) return reachGoal(p);
+      break;
+    case 'gift': {
+      let got = 0;
+      for (const q of S.players) if (q !== p) { const a = Math.min(5, q.points); q.points -= a; got += a; }
+      p.points += got;
+      floater(p.i, `＋${got}`);
+      sfx('point');
+      paintPlayers(); bump(p.i);
+      await wait(900);
+      break;
+    }
+    case 'back3':
+      Stage.sad(p.i);
+      await move(p, -3);
+      break;
+    case 'rest':
+      p.skip = true;
+      paintPlayers();
+      floater(p.i, '1回休み', true);
+      await wait(900);
       break;
   }
 }

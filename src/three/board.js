@@ -3,13 +3,28 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { part, toon, flat } from './toon.js';
 
-export const TILE_COUNT = 40;
 export const TILE_H = 0.22;
 
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-export const groundY = r => 0.35 + 2.4 * (1 - smooth(1.4, 9.6, r));
+// マップ（長さ）。島の大きさ・うずまきの まき数・季節が かわる
+export const MAPS = {
+  short:  { id: 'short',  name: 'みじかい', stage: 'はるの こじま',   tiles: 28, scale: 0.8,  turns: 2.3,  theme: 'spring' },
+  normal: { id: 'normal', name: 'ふつう',   stage: 'なつの しま',     tiles: 40, scale: 1,    turns: 2.75, theme: 'summer' },
+  long:   { id: 'long',   name: 'ながい',   stage: 'あきの おおしま', tiles: 56, scale: 1.25, turns: 3.2,  theme: 'autumn' },
+};
+export const THEMES = {
+  spring: { sky: 0xBFE8FF, sea: 0x7FD6F2, grass: 0xA6E07C, beach: 0xF8E7B5,
+    round: [0xFFB7D0, 0xFF9EC2, 0xFFC8DA, 0x6BD07A], pine: [0x3FAF6A, 0x4CC07A], flowers: [0xFF8FA8, 0xFFFFFF, 0xFFD45C, 0xFFB7D0], flowerRate: 0.35 },
+  summer: { sky: 0x9FDCFF, sea: 0x6FCBEF, grass: 0x8EDB6A, beach: 0xF6E2A4,
+    round: [0x5CC46A, 0x6BD07A, 0x4DB860], pine: [0x3FAF6A, 0x4CC07A], flowers: [0xFF8FA8, 0xFFFFFF, 0xFFD45C, 0xB57BFF], flowerRate: 0.18 },
+  autumn: { sky: 0xAED8F2, sea: 0x5FBCE4, grass: 0xBBD56C, beach: 0xF3DDA0,
+    round: [0xF29B3D, 0xE8623D, 0xF2C94C, 0xD9822B], pine: [0x3F9F5E, 0x4CAF6A], flowers: [0xFFD45C, 0xFF8A5B, 0xFFFFFF], flowerRate: 0.15 },
+};
 
-// マスの種類と並び（ステップ3でお店5・カード6にふやした）
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+let SC = 1;   // いまの 島の 大きさ（ふつう＝1）
+export const groundY = r => 0.35 + 2.4 * (1 - smooth(1.4, 9.6 * SC, r));
+
+// マスの種類（ふつうの マスは なし。ぜんぶ なにかが おきる）
 export const TILE_TYPES = {
   normal: { color: 0xFFF8EA, label: '' },
   start:  { color: 0x7BD88F, label: 'スタート' },
@@ -20,21 +35,47 @@ export const TILE_TYPES = {
   shop:   { color: 0xC39BFF, label: 'お店' },
   fwd:    { color: 0x7BD88F, label: '＋2' },
   back:   { color: 0xFFA45C, label: '−2' },
-};
-const LAYOUT = {
-  0: 'start', 39: 'goal',
-  2: 'point', 8: 'point', 15: 'point', 22: 'point', 30: 'point', 35: 'point',
-  10: 'minus', 25: 'minus', 33: 'minus',
-  3: 'card', 5: 'card', 9: 'card', 14: 'card', 17: 'card', 21: 'card', 24: 'card', 29: 'card', 32: 'card', 37: 'card',
-  6: 'shop', 13: 'shop', 20: 'shop', 27: 'shop', 34: 'shop',
-  12: 'fwd', 28: 'fwd',
-  18: 'back', 36: 'back',
+  chance: { color: 0xFF9AD5, label: 'チャンス' },
+  again:  { color: 0x5FD3C8, label: 'もう1回' },
 };
 
-// うずまきの道を、同じ間かくで40こに分ける
-function spiralPoints() {
+// マスの ならびを 作る。お店は 7マスごと、ほかは わりあいで まぜる（いつも 同じ ならびに なる）
+export function makeLayout(n) {
+  const out = Array(n).fill(null);
+  out[0] = 'start';
+  out[n - 1] = 'goal';
+  const free = [];
+  for (let i = 1; i < n - 1; i++) {
+    if (i % 7 === 6 && i < n - 2) out[i] = 'shop';
+    else free.push(i);
+  }
+  const RATE = [['card', 0.27], ['point', 0.19], ['chance', 0.14], ['minus', 0.09], ['fwd', 0.08], ['back', 0.08], ['again', 0.06]];
+  const bag = [];
+  for (const [t, r] of RATE) for (let k = 0; k < Math.round(free.length * r); k++) bag.push(t);
+  while (bag.length < free.length) bag.push(bag.length % 2 ? 'point' : 'card');
+  bag.length = free.length;
+  const rand = mulberry(n * 97 + 13);
+  const bad = new Set(['minus', 'back']);
+  for (let tries = 0; tries < 400; tries++) {
+    for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+    free.forEach((i, k) => { out[i] = bag[k]; });
+    // おなじ マスが となりあわない・はじめの 2マスと ゴールの 前は わるい マスに しない・すすむ／もどる が となりあわない
+    let ok = !bad.has(out[1]) && !bad.has(out[2]) && !bad.has(out[n - 2]);
+    for (let i = 1; ok && i < n - 2; i++) {
+      if (out[i] === out[i + 1]) ok = false;
+      if (bad.has(out[i]) && bad.has(out[i + 1])) ok = false;
+      if ((out[i] === 'fwd' || out[i] === 'back') && (out[i + 1] === 'fwd' || out[i + 1] === 'back')) ok = false;
+    }
+    if (ok) break;
+  }
+  return out;
+}
+
+// うずまきの道を、同じ間かくで n こに分ける
+function spiralPoints(map) {
   const dense = [];
-  const turns = Math.PI * 2.75, r0 = 9.4, r1 = 1.75;
+  const TILE_COUNT = map.tiles;
+  const turns = Math.PI * map.turns, r0 = 9.4 * map.scale, r1 = 1.75;
   for (let i = 0; i <= 2000; i++) {
     const u = i / 2000, th = -Math.PI * 0.35 + u * turns, r = r0 - (r0 - r1) * u;
     dense.push(new THREE.Vector3(Math.cos(th) * r, 0, Math.sin(th) * r));
@@ -74,39 +115,43 @@ function labelTexture(text, color) {
   return t;
 }
 
-export function buildWorld(scene) {
+export function buildWorld(scene, mapId = 'normal') {
+  const map = MAPS[mapId] || MAPS.normal;
+  const th = THEMES[map.theme];
+  SC = map.scale;
+  const LAYOUT = makeLayout(map.tiles);
   const world = new THREE.Group();
   scene.add(world);
 
   // 海
-  const sea = new THREE.Mesh(new THREE.CircleGeometry(90, 64), toon(0x6FCBEF));
+  const sea = new THREE.Mesh(new THREE.CircleGeometry(90 * SC, 64), toon(th.sea));
   sea.rotation.x = -Math.PI / 2;
   sea.receiveShadow = true;
   world.add(sea);
-  const foam = flat(new THREE.RingGeometry(11.5, 12.6, 80), 0xffffff, { opacity: 0.75 });
+  const foam = flat(new THREE.RingGeometry(11.5 * SC, 12.6 * SC, 80), 0xffffff, { opacity: 0.75 });
   foam.rotation.x = -Math.PI / 2;
   foam.position.y = 0.03;
   world.add(foam);
 
   // 島（草の丘＋すなはま）
   const prof = [];
-  for (let r = 0; r <= 10.8; r += 0.2) prof.push(new THREE.Vector2(r, groundY(r)));
-  prof.push(new THREE.Vector2(11.0, 0.3));
-  const grass = new THREE.Mesh(new THREE.LatheGeometry(prof.reverse(), 72), toon(0x8EDB6A));
+  for (let r = 0; r <= 10.8 * SC; r += 0.2) prof.push(new THREE.Vector2(r, groundY(r)));
+  prof.push(new THREE.Vector2(11.0 * SC, 0.3));
+  const grass = new THREE.Mesh(new THREE.LatheGeometry(prof.reverse(), 72), toon(th.grass));
   grass.receiveShadow = true;
   world.add(grass);
   const beach = new THREE.Mesh(new THREE.LatheGeometry([
-    new THREE.Vector2(12.0, -0.6), new THREE.Vector2(11.9, 0.08), new THREE.Vector2(11.0, 0.3),
-  ], 72), toon(0xF6E2A4));
+    new THREE.Vector2(12.0 * SC, -0.6), new THREE.Vector2(11.9 * SC, 0.08), new THREE.Vector2(11.0 * SC, 0.3),
+  ], 72), toon(th.beach));
   beach.receiveShadow = true;
   world.add(beach);
 
   // 道とマス
-  const pts = spiralPoints();
+  const pts = spiralPoints(map);
   const tileGeo = new RoundedBoxGeometry(0.98, TILE_H, 0.98, 3, 0.1);
   const tiles = [];
   pts.forEach((p, i) => {
-    const type = LAYOUT[i] || 'normal';
+    const type = LAYOUT[i] || 'normal';  // （ふつうの マスは もう ない）
     const def = TILE_TYPES[type];
     const g = new THREE.Group();
     g.position.copy(p);
@@ -153,16 +198,18 @@ export function buildWorld(scene) {
   const rand = mulberry(7);
   const clear = (x, z, d) => pts.every(p => Math.hypot(p.x - x, p.z - z) > d) && Math.hypot(x, z) > 2.6;
   let placed = 0;
-  for (let n = 0; n < 900 && placed < 70; n++) {
-    const r = 1.5 + rand() * 9.2, th = rand() * Math.PI * 2;
-    const x = Math.cos(th) * r, z = Math.sin(th) * r;
+  const want = Math.round(70 * SC * SC);
+  for (let n = 0; n < 1400 && placed < want; n++) {
+    const r = 1.5 + rand() * 9.2 * SC, a = rand() * Math.PI * 2;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (!clear(x, z, 1.3)) continue;
     const y = groundY(r);
     const k = rand();
-    if (k < 0.45) world.add(roundTree(x, y, z, 0.7 + rand() * 0.5, rand));
-    else if (k < 0.75) world.add(pineTree(x, y, z, 0.7 + rand() * 0.5));
+    const fl = th.flowerRate;
+    if (k < 0.82 - fl - 0.3) world.add(roundTree(x, y, z, 0.7 + rand() * 0.5, rand, th.round));
+    else if (k < 0.82 - fl) world.add(pineTree(x, y, z, 0.7 + rand() * 0.5, th.pine));
     else if (k < 0.82 && clear(x, z, 1.6)) world.add(house(new THREE.Vector3(x, y, z), 0xFFF8EA, [0xFF7A7A, 0x6EC1FF, 0xFFB347][Math.floor(rand() * 3)], 0.75, rand() * 6));
-    else world.add(flower(x, y, z, [0xFF8FA8, 0xFFFFFF, 0xFFD45C, 0xB57BFF][Math.floor(rand() * 4)]));
+    else world.add(flower(x, y, z, th.flowers[Math.floor(rand() * th.flowers.length)]));
     placed++;
   }
 
@@ -171,8 +218,8 @@ export function buildWorld(scene) {
   for (let i = 0; i < 9; i++) {
     const c = cloud(rand);
     // カメラが回る道（半径26・高さ17）にかからないように、遠くの空へ
-    const th = rand() * Math.PI * 2, r = 34 + rand() * 12;
-    c.position.set(Math.cos(th) * r, 5 + rand() * 6, Math.sin(th) * r);
+    const a = rand() * Math.PI * 2, r = (34 + rand() * 12) * SC;
+    c.position.set(Math.cos(a) * r, (5 + rand() * 6) * SC, Math.sin(a) * r);
     c.scale.setScalar(2.2);
     c.userData.speed = 0.04 + rand() * 0.05;
     world.add(c);
@@ -180,6 +227,9 @@ export function buildWorld(scene) {
   }
 
   return {
+    group: world,
+    map,
+    theme: th,
     tiles,
     update(t, dt) {
       foam.scale.setScalar(1 + Math.sin(t * 1.3) * 0.012);
@@ -197,23 +247,23 @@ function mulberry(a) {
   return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
 const SPH = new THREE.SphereGeometry(1, 18, 14);
-function roundTree(x, y, z, s, rand) {
+function roundTree(x, y, z, s, rand, colors) {
   const g = new THREE.Group();
   g.position.set(x, y, z);
   g.scale.setScalar(s);
   g.add(part(new THREE.CylinderGeometry(0.08, 0.11, 0.5, 8), 0xA0703F, { at: [0, 0.25, 0] }));
-  const green = [0x5CC46A, 0x6BD07A, 0x4DB860][Math.floor(rand() * 3)];
+  const green = colors[Math.floor(rand() * colors.length)];
   g.add(part(SPH, green, { at: [0, 0.78, 0], scale: 0.42, outline: 0.07 }));
   g.add(part(SPH, green, { at: [0.22, 0.62, 0.1], scale: 0.26, outline: 0.08 }));
   return g;
 }
-function pineTree(x, y, z, s) {
+function pineTree(x, y, z, s, colors) {
   const g = new THREE.Group();
   g.position.set(x, y, z);
   g.scale.setScalar(s);
   g.add(part(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 8), 0xA0703F, { at: [0, 0.15, 0] }));
-  g.add(part(new THREE.ConeGeometry(0.42, 0.6, 12), 0x3FAF6A, { at: [0, 0.5, 0] }));
-  g.add(part(new THREE.ConeGeometry(0.32, 0.5, 12), 0x4CC07A, { at: [0, 0.85, 0] }));
+  g.add(part(new THREE.ConeGeometry(0.42, 0.6, 12), colors[0], { at: [0, 0.5, 0] }));
+  g.add(part(new THREE.ConeGeometry(0.32, 0.5, 12), colors[1], { at: [0, 0.85, 0] }));
   return g;
 }
 function flower(x, y, z, color) {

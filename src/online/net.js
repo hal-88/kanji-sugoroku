@@ -6,10 +6,10 @@
 //
 // データの形（sugoroku/rooms/ばんごう4けた）
 //   meta     { createdAt, host, status: 'lobby' | 'playing' }
-//   settings { grade, time }
+//   settings { grade, time, map }
 //   members  { uid: { name, char, joinedAt, online, left } }
 //   cpus     { id: { char, cpu, at } }       … ホストが 入れた CPU
-//   game     { round, seed, grade, time, players: [{ uid?, name, char, cpu }] }
+//   game     { round, seed, grade, time, map, players: [{ uid?, name, char, cpu }] }
 //   log      { 回: { 番号: { k, v } } }       … k＝なにを えらんだか（'leave' は「ぬけたので CPU に」）
 import { FIREBASE_CONFIG, ONLINE } from './config.js';
 
@@ -123,7 +123,7 @@ export async function removeCpu(code, id) { const db = await getDb(); return db.
 export const myUid = async () => (await getDb()).uid;
 
 /** ホストが ゲームを はじめる（いま 部屋にいる人＋CPU で） */
-export async function startRound(code, room) {
+export async function startRound(code, room, map) {
   const db = await getDb();
   const players = roster(room)
     .filter(m => !m.uid || m.online !== false)
@@ -132,6 +132,7 @@ export async function startRound(code, room) {
   await db.set(R(code, 'game'), {
     round, seed: (Math.random() * 0xffffffff) >>> 0, players,
     grade: room.settings?.grade || 4, time: room.settings?.time ?? 20,
+    map: map || room.settings?.map || 'normal',
   });
   await db.update(R(code, 'meta'), { status: 'playing' });
 }

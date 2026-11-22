@@ -1,11 +1,13 @@
 // 3Dの舞台：島・キャラ・ぴょん移動・カメラ。ゲームの進行（game.js）からはここの関数だけを呼ぶ。
 import * as THREE from 'three';
-import { buildWorld, TILE_COUNT } from './board.js';
+import { buildWorld, MAPS } from './board.js';
 import { CHARACTERS, makeCharacter } from './characters.js';
 import { sfx } from '../sfx.js';
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
-export const GOAL = TILE_COUNT - 1;
+// ゴールの マス（マップで かわる。import した 先でも いまの 値が 見える）
+export let GOAL = MAPS.normal.tiles - 1;
+let SC = 1, mapId = null, sun = null;
 export const charDef = id => CHARACTERS.find(c => c.id === id);
 
 let renderer, scene, camera, world, tiles;
@@ -28,7 +30,7 @@ export async function initStage(canvas) {
   scene.fog = new THREE.Fog(0x9FDCFF, 40, 85);
   camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x9ccfff, 1.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+  sun = new THREE.DirectionalLight(0xffffff, 2.2);
   sun.position.set(9, 16, 7);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -38,11 +40,11 @@ export async function initStage(canvas) {
   scene.add(sun);
 
   await document.fonts.load('900 64px "Zen Maru Gothic"').catch(() => {});
-  world = buildWorld(scene);
-  tiles = world.tiles;
+  setMap('normal');
 
   addEventListener('resize', resize);
   resize();
+  setupDrag(canvas);
   const g = cameraGoal(0);
   camPos.copy(g.pos);
   camLook.copy(g.look);
@@ -55,6 +57,34 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
+
+/* ---------- マップ（長さ・ステージ） ---------- */
+export function setMap(id) {
+  if (!MAPS[id]) id = 'normal';
+  if (id === mapId && world) return;
+  mapId = id;
+  userYaw = 0; userTilt = 0; userZoom = 1;
+  if (world) {
+    scene.remove(world.group);
+    world.group.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material && o.material.map) o.material.map.dispose();
+    });
+  }
+  world = buildWorld(scene, id);
+  tiles = world.tiles;
+  GOAL = tiles.length - 1;
+  SC = world.map.scale;
+  scene.background = new THREE.Color(world.theme.sky);
+  scene.fog = new THREE.Fog(world.theme.sky, 40 * SC, 85 * SC);
+  const b = 15 * SC;
+  Object.assign(sun.shadow.camera, { left: -b, right: b, top: b, bottom: -b, far: 50 * SC });
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.position.set(9 * SC, 16 * SC, 7 * SC);
+  // キャラは スタートへ
+  actors.forEach(a => { a.pos = Math.min(a.pos, GOAL); a.ch.position.copy(spotOf(a)); });
+}
+export const getMap = () => mapId;
 
 /* ---------- キャラの用意 ---------- */
 export function setPlayers(charIds) {
@@ -72,7 +102,10 @@ export function setCurrent(i) { current = i; focus = null; }
 // カメラだけ別の人に向ける（こうげきされた人を見せる）。null でもとにもどる
 let focus = null;
 export function setFocus(i) { focus = i; }
-export function setView(v) { view = v; }
+export function setView(v) {
+  if (v === 'orbit' && view !== 'orbit') { userYaw = 0; userTilt = 0; userZoom = 1; }   // はじめの画面に もどったら 見え方を もとに
+  view = v;
+}
 export function getView() { return view; }
 export function tileType(i) { return tiles[i].type; }
 export function posOf(i) { return actors[i].pos; }
@@ -216,14 +249,57 @@ export async function sad(i) {
   body.rotation.x = 0;
 }
 
+/* ---------- ゆびで 島を 回す・大きくする（タイトルと「ぜんたい」のとき） ---------- */
+let userYaw = 0, userTilt = 0, userZoom = 1;
+const canTurn = () => view === 'orbit' || view === 'overview' || current < 0;
+function setupDrag(canvas) {
+  const pts = new Map();
+  let pinch = 0;
+  canvas.addEventListener('pointerdown', e => {
+    if (!canTurn()) return;
+    canvas.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+  });
+  canvas.addEventListener('pointermove', e => {
+    const old = pts.get(e.pointerId);
+    if (!old || !canTurn()) return;
+    const now = { x: e.clientX, y: e.clientY };
+    pts.set(e.pointerId, now);
+    if (pts.size >= 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch) userZoom = Math.min(1.6, Math.max(0.5, userZoom * pinch / d));
+      pinch = d;
+      return;
+    }
+    userYaw -= (now.x - old.x) * 0.008;
+    userTilt = Math.min(0.5, Math.max(-0.45, userTilt + (now.y - old.y) * 0.004));
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', e => {
+    if (!canTurn()) return;
+    e.preventDefault();
+    userZoom = Math.min(1.6, Math.max(0.5, userZoom * (e.deltaY > 0 ? 1.1 : 0.9)));
+  }, { passive: false });
+}
+// 上から見る 位置を、回した 角度・かたむき・大きさで かえる
+function turned(h, d, yaw) {
+  const rho = Math.hypot(h, d) * userZoom;
+  const phi = Math.min(1.4, Math.max(0.35, Math.atan2(h, d) + userTilt));
+  const a = yaw + userYaw;
+  return new THREE.Vector3(Math.sin(a) * Math.cos(phi) * rho, Math.sin(phi) * rho, Math.cos(a) * Math.cos(phi) * rho);
+}
+
 /* ---------- カメラ ---------- */
 function cameraGoal(t) {
   const narrow = innerWidth / innerHeight < 1;
   if (view === 'orbit' || current < 0) {
-    const a = t * 0.06;
-    return { pos: new THREE.Vector3(Math.sin(a) * 26, narrow ? 30 : 17, Math.cos(a) * 26), look: new THREE.Vector3(0, 1.2, 0) };
+    return { pos: turned((narrow ? 30 : 17) * SC, 26 * SC, t * 0.06), look: new THREE.Vector3(0, 1.2, 0) };
   }
-  if (view === 'overview') return { pos: new THREE.Vector3(0, narrow ? 34 : 21, narrow ? 26 : 19), look: new THREE.Vector3(0, 0.6, 0.6) };
+  if (view === 'overview') return { pos: turned((narrow ? 34 : 21) * SC, (narrow ? 26 : 19) * SC, 0), look: new THREE.Vector3(0, 0.6, 0) };
   const p = actors[focus ?? current].ch.position.clone();
   const out = new THREE.Vector3(p.x, 0, p.z);
   if (out.lengthSq() < 0.01) out.set(0, 0, 1);
@@ -312,4 +388,15 @@ export function makePortraits(size = 256) {
   r.dispose();
   r.forceContextLoss();
   return out;
+}
+
+// 確認用（npm run dev のときだけ）：画面が かくれていても 1まい 描いて 画像に する
+if (import.meta.env.DEV) {
+  window.__stage = {
+    shot(frames = 30) {
+      for (let i = 0; i < frames; i++) frame();
+      return renderer.domElement.toDataURL('image/jpeg', 0.8);
+    },
+    setMap, setView,
+  };
 }

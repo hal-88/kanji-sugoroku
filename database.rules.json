@@ -19,6 +19,7 @@
             ".write": "auth != null && data.exists() && root.child('sugoroku/rooms/' + $code + '/meta/host').val() === auth.uid",
             "grade": { ".validate": "newData.val() === 4 || newData.val() === 5 || newData.val() === 6" },
             "time": { ".validate": "newData.val() === 0 || newData.val() === 20 || newData.val() === 30" },
+            "map": { ".validate": "newData.val() === 'short' || newData.val() === 'normal' || newData.val() === 'long'" },
             "$other": { ".validate": false }
           },
           "members": {

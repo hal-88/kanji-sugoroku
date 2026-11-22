@@ -9,10 +9,12 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const KEY = 'kanji-sugoroku-online';
 const LEVEL = { 1: 'よわい', 2: 'ふつう', 3: 'つよい' };
+const MAP_NAME = { short: 'みじかい', normal: 'ふつう', long: 'ながい' };
 
 let opt = null;        // main.js から もらう { showScreen, face, startGame, toTitle }
 let prof = { name: '', char: 'tanuki' };
 let code = null, room = null, uid = null, off = null, seenRound = null, playing = false, busy = false;
+let hostMap = 'normal';   // ホストが えらんだ マップ（ルールが 古くて 書けなくても ゲームには わたす）
 
 try { prof = { ...prof, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch (e) { /* なし */ }
 const saveProf = () => { try { localStorage.setItem(KEY, JSON.stringify(prof)); } catch (e) { /* なし */ } };
@@ -39,6 +41,14 @@ export function initOnline(o) {
   $('#btn-add-cpu').addEventListener('click', addCpu);
   $('#room-grade').addEventListener('click', e => { const b = e.target.closest('button'); if (b && amHost()) { sfx('tap'); Net.setSettings(code, { grade: Number(b.dataset.v) }); } });
   $('#room-time').addEventListener('click', e => { const b = e.target.closest('button'); if (b && amHost()) { sfx('tap'); Net.setSettings(code, { time: Number(b.dataset.v) }); } });
+  $('#room-map').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || !amHost()) return;
+    sfx('tap');
+    hostMap = b.dataset.v;
+    paintRoom();
+    Net.setSettings(code, { map: hostMap }).catch(() => {});
+  });
   $('#room-members').addEventListener('click', onMemberClick);
 }
 
@@ -95,6 +105,7 @@ async function join() {
 /* ---------- 部屋の中 ---------- */
 async function enter(c) {
   code = c;
+  hostMap = 'normal';
   uid = await Net.myUid();
   seenRound = null;
   room = null;
@@ -160,13 +171,15 @@ function paintRoom() {
   $('#room-host-only').hidden = !host;
   $$('#room-grade button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.v) === (room.settings?.grade || 4))));
   $$('#room-time button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.v) === (room.settings?.time ?? 20))));
+  const mapNow = host ? hostMap : room.settings?.map || 'normal';
+  $$('#room-map button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === mapNow)));
   $('#btn-add-cpu').disabled = list.length >= ONLINE.maxPlayers;
   const start = $('#btn-room-start');
   start.hidden = !host;
   start.disabled = list.filter(m => !m.uid || m.online !== false).length < 2;
   msg(host
     ? (start.disabled ? 'ともだちが 入るのを まってね（CPU を 入れても あそべるよ）' : 'そろったら「はじめる！」')
-    : `学年 ${room.settings?.grade || 4}年・${room.settings?.time ? room.settings.time + '秒' : '時間なし'}　ホストが はじめるのを まってね`, '#room-msg');
+    : `学年 ${room.settings?.grade || 4}年・${room.settings?.time ? room.settings.time + '秒' : '時間なし'}・マップ ${MAP_NAME[room.settings?.map] || 'ふつう'}　ホストが はじめるのを まってね`, '#room-msg');
 }
 
 async function onMemberClick(e) {
@@ -203,14 +216,14 @@ async function start() {
   if (!amHost() || busy) return;
   sfx('tap');
   busy = true;
-  try { await Net.startRound(code, room); } catch (e) { console.error(e); msg('はじめられませんでした', '#room-msg'); } finally { busy = false; }
+  try { await Net.startRound(code, room, hostMap); } catch (e) { console.error(e); msg('はじめられませんでした', '#room-msg'); } finally { busy = false; }
 }
 
 async function startRound(g) {
   playing = true;
   const net = await Net.makeNet(code, g.round);
   const players = g.players.map(p => ({ ...p, name: p.cpu ? `CPU${CHARACTERS.find(c => c.id === p.char)?.name || ''}` : p.name }));
-  opt.startGame({ grade: g.grade, time: g.time, seed: g.seed, players }, net, async v => {
+  opt.startGame({ grade: g.grade, time: g.time, map: g.map || 'normal', seed: g.seed, players }, net, async v => {
     playing = false;
     if (v === 'lobby' && code) {
       if (amHost()) await Net.setMeta(code, { status: 'lobby' });
