@@ -1,0 +1,59 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "sugoroku": {
+      "rooms": {
+        "$code": {
+          ".read": "auth != null",
+          ".write": "auth != null && $code.matches(/^[0-9]{4}$/) && (!data.exists() || !data.child('meta/createdAt').exists() || data.child('meta/createdAt').val() < now - 21600000 || (!newData.exists() && !data.child('members').exists()) || (!newData.exists() && data.child('members/' + auth.uid).exists()))",
+          "meta": {
+            ".write": "auth != null && data.exists() && root.child('sugoroku/rooms/' + $code + '/members/' + auth.uid).exists()",
+            ".validate": "newData.hasChildren(['createdAt', 'host', 'status'])",
+            "createdAt": { ".validate": "newData.isNumber()" },
+            "host": { ".validate": "newData.isString() && newData.val().length <= 128" },
+            "status": { ".validate": "newData.val() === 'lobby' || newData.val() === 'playing'" },
+            "$other": { ".validate": false }
+          },
+          "settings": {
+            ".write": "auth != null && data.exists() && root.child('sugoroku/rooms/' + $code + '/meta/host').val() === auth.uid",
+            "grade": { ".validate": "newData.val() === 4 || newData.val() === 5 || newData.val() === 6" },
+            "time": { ".validate": "newData.val() === 0 || newData.val() === 20 || newData.val() === 30" },
+            "$other": { ".validate": false }
+          },
+          "members": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && root.child('sugoroku/rooms/' + $code + '/meta').exists()",
+              "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 6" },
+              "char": { ".validate": "newData.val() === 'tanuki' || newData.val() === 'neko' || newData.val() === 'usagi' || newData.val() === 'pengin'" },
+              "joinedAt": { ".validate": "newData.isNumber()" },
+              "online": { ".validate": "newData.isBoolean()" },
+              "left": { ".validate": "newData.isBoolean()" },
+              "$other": { ".validate": false }
+            }
+          },
+          "cpus": {
+            ".write": "auth != null && root.child('sugoroku/rooms/' + $code + '/meta/host').val() === auth.uid",
+            "$id": {
+              "char": { ".validate": "newData.val() === 'tanuki' || newData.val() === 'neko' || newData.val() === 'usagi' || newData.val() === 'pengin'" },
+              "cpu": { ".validate": "newData.val() === 1 || newData.val() === 2 || newData.val() === 3" },
+              "at": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
+            }
+          },
+          "game": {
+            ".write": "auth != null && root.child('sugoroku/rooms/' + $code + '/meta/host').val() === auth.uid"
+          },
+          "log": {
+            "$round": {
+              "$n": {
+                ".write": "auth != null && !data.exists() && root.child('sugoroku/rooms/' + $code + '/members/' + auth.uid).exists()",
+                ".validate": "newData.hasChildren(['k']) && newData.child('k').isString() && newData.child('k').val().length <= 10"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
