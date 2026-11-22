@@ -104,6 +104,7 @@ if (import.meta.env.DEV) {
     points(i, n) { S.players[i].points = n; paintPlayers(); },
     shop: i => shop(S.players[i]).catch(() => {}),
     cardTile: i => cardTile(S.players[i]).catch(() => {}),
+    duelIntro: (i, j) => duelIntro(S.players[i], S.players[j]).catch(() => {}),
     state: () => S,
   };
 }
@@ -794,11 +795,46 @@ async function maybeDuel(p) {
   return loser === p;
 }
 
+// 決闘の はじまり：画面いっぱいの 演出（光の すじ・左右から 登場・VSで ぶつかる・決闘！！が ドーン）
+async function duelIntro(a, b) {
+  let el = $('#duel-intro');
+  if (!el) { el = document.createElement('div'); el.id = 'duel-intro'; document.body.append(el); }
+  const side = (p, cls) => `
+    <div class="di-side ${cls}" style="--c:${charDef(p.char).ui}">
+      <div class="di-ava">${ava(p)}</div>
+      <div class="di-name">${esc(p.name)}</div>
+    </div>`;
+  const sparks = Array.from({ length: 14 }, (_, k) => `<i style="--a:${k * (360 / 14) + 8}deg;--d:${110 + (k % 3) * 45}px"></i>`).join('');
+  el.innerHTML = `
+    <div class="di-shake">
+      <div class="di-bg"></div>
+      <div class="di-rays"></div>
+      <div class="di-panel left" style="--c:${charDef(a.char).ui}"></div>
+      <div class="di-panel right" style="--c:${charDef(b.char).ui}"></div>
+      <div class="di-slash"></div>
+      <div class="di-vignette"></div>
+      ${side(a, 'left')}${side(b, 'right')}
+      <div class="di-vs">VS</div>
+      <div class="di-sparks">${sparks}</div>
+      <div class="di-flash"></div>
+      <div class="di-title">決闘!!</div>
+      <div class="di-sub">部首しんけいすいじゃく</div>
+    </div>`;
+  el.className = 'show';
+  void el.offsetWidth;
+  el.classList.add('go');
+  sfx('duel');
+  await wait(REDUCED ? 1400 : 2900);
+  el.classList.add('out');
+  await wait(320);
+  el.className = '';
+  el.innerHTML = '';
+}
+
 async function duel(a, b) {
   const id = gameId;
-  sfx('boom');
   await lookAt(b.i, 300);
-  await splash(`<div class="vs">${ava(a, 'lg')}<span class="vs-arrow">VS</span>${ava(b, 'lg')}</div><div class="big">決闘！</div><div class="big small">部首しんけいすいじゃく</div>`);
+  await duelIntro(a, b);
   lookBack();
   const pairs = pickPairs(S.settings.grade);
   const cards = makeBoard(pairs);

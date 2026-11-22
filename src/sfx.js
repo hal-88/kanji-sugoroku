@@ -30,6 +30,18 @@ function note(f, { t = 0, dur = 0.25, type = 'triangle', vol = 0.14, slide = 1 }
   o.stop(now + dur + 0.03);
 }
 
+// ザッという 音（決闘の ぶつかる音）
+function noise(t, dur, vol) {
+  const now = ctx.currentTime + t, len = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const s = ctx.createBufferSource(), g = ctx.createGain();
+  s.buffer = buf;
+  g.gain.value = vol;
+  s.connect(g).connect(ctx.destination);
+  s.start(now);
+}
+
 export function sfx(name, n = 0) {
   if (!on) return;
   unlockSound();
@@ -52,5 +64,15 @@ export function sfx(name, n = 0) {
     case 'hit': N(150, { dur: 0.3, vol: 0.24, type: 'sine', slide: 0.5 }); N(95, { t: 0.02, dur: 0.22, vol: 0.1, type: 'square', slide: 0.6 }); break;
     case 'boom': N(110, { dur: 0.7, vol: 0.28, type: 'sawtooth', slide: 0.3 }); N(70, { t: 0.05, dur: 0.6, vol: 0.18, type: 'square', slide: 0.5 }); break;
     case 'win': [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => N(f, { t: i * 0.12, dur: 0.55, vol: 0.13 })); break;
+    case 'duel':
+      // ドドドド… → カキーン！ → ドーン → ジャジャーン
+      for (let i = 0; i < 12; i++) N(90 + i * 6, { t: i * 0.055, dur: 0.07, vol: 0.12 + i * 0.008, type: 'square', slide: 0.7 });
+      noise(0.72, 0.35, 0.35);
+      N(1760, { t: 0.72, dur: 0.6, vol: 0.12, type: 'sine' });
+      N(2637, { t: 0.74, dur: 0.5, vol: 0.06, type: 'sine' });
+      N(80, { t: 1.12, dur: 0.9, vol: 0.32, type: 'sawtooth', slide: 0.4 });
+      noise(1.12, 0.5, 0.25);
+      [392, 523, 659, 784].forEach((f, i) => N(f, { t: 1.45 + i * 0.09, dur: 0.6, vol: 0.11, type: 'sawtooth' }));
+      break;
   }
 }
