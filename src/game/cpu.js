@@ -95,7 +95,7 @@ function judge(S, p, id, careless) {
       if (!careless && !t.cards.length) return null;
       return { score: (3 + t.cards.length) * risk(t), target: t.i };
     }
-    case 'hint': return { score: p.cpu === 3 ? 1 : 3.5 };
+    case 'hint': return p.hint ? null : { score: p.cpu === 3 ? 1 : 3.5 };
     case 'draw': return { score: 4 };
   }
   return null;
@@ -110,12 +110,19 @@ export function planCard(S, p) {
     const c = pickOne(usable), j = judge(S, p, c.id, true);
     return j ? { ...j, ...c } : null;
   }
-  let best = null;
-  for (const c of usable) {
-    const j = judge(S, p, c.id, false);
-    if (j && (!best || j.score > best.score)) best = { ...j, ...c };
-  }
-  if (!best || best.score < (p.cpu === 3 ? 3 : 4)) return null;
+  // サイコロの カードは 使うと すぐ ふるので、ほかの カードを 先に 使う
+  const ROLL = ['dice2', 'dice3', 'lucky6', 'pick'];
+  const th = p.cpu === 3 ? 3 : 4;
+  const pickBest = list => {
+    let best = null;
+    for (const c of list) {
+      const j = judge(S, p, c.id, false);
+      if (j && (!best || j.score > best.score)) best = { ...j, ...c };
+    }
+    return best && best.score >= th ? best : null;
+  };
+  const best = pickBest(usable.filter(c => !ROLL.includes(c.id))) || pickBest(usable.filter(c => ROLL.includes(c.id)));
+  if (!best) return null;
   if (p.cpu === 2 && rnd() < 0.2) return null;
   return best;
 }

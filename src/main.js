@@ -162,7 +162,7 @@ function openHowto() {
       <h3 class="ht">マスの しゅるい</h3>
       <div class="sq-legend">${sq.map(([c, l, d]) => `<div class="sq"><i style="background:${c}">${l}</i><span>${d}</span></div>`).join('')}</div>
       <h3 class="ht">カード</h3>
-      <p class="ht-note">手札は 3まいまで。自分の番に 1まい 使える（サイコロの前）。<br>「反撃」の カードは、あいてに こうげきされたとき 使える。</p>
+      <p class="ht-note">手札は 3まいまで。はじめに 1まい もらえる。自分の番に、サイコロの前なら 何まいでも 使える（サイコロの カードは 使うと すぐ ふる）。<br>「反撃」の カードは、あいてに こうげきされたとき 使える。</p>
       <div class="card-legend">${cards}</div>
     </div>`,
     buttons: [{ label: 'わかった！', value: true, kind: 'primary' }],

@@ -1,6 +1,6 @@
 // ゲームの進行（1台で2〜4人が交代で遊ぶ／オンラインでは 1人1台）
 // オンライン：みんなの iPad が 同じ 運のたね で 同じ 進行を 動かし、人が えらんだことだけを NET で やりとりする
-// 1回の番：「○○の番！」→（カードを1まい使える）→ サイコロ → 漢字の問題 → 正解なら進む＋ポイント → マスのできごと
+// 1回の番：「○○の番！」→（カードを 何まいでも 使える）→ サイコロ → 漢字の問題 → 正解なら進む＋ポイント → マスのできごと
 import * as Stage from '../three/stage.js';
 import { GOAL, charDef } from '../three/stage.js';
 import { main, ABORT } from '../ui/dialog.js';
@@ -119,12 +119,14 @@ export function startGame(settings, exitTo, net = null) {
     settings,
     players: settings.players.map((p, i) => ({
       i, char: p.char, name: p.name || charDef(p.char).name, cpu: p.cpu || 0, plan: null, uid: p.uid || null,
-      pos: 0, points: 0, skip: false, cards: [], usedCard: false, hint: false,
+      pos: 0, points: 0, skip: false, cards: [], usedCard: 0, hint: false,   // usedCard＝この番に 使った まい数
       stats: { asked: 0, correct: 0, missed: [], cardsUsed: 0 },
     })),
     current: 0, phase: 'busy', ended: false, actionResolve: null,
     bag: makeBag(settings.grade),
   };
+  // はじめに みんなへ カードを 1まい（運のたね から ひくので オンラインでも 同じ）
+  S.players.forEach(p => p.cards.push(drawCard()));
   Stage.setMap(settings.map || 'normal');
   Stage.setPlayers(S.players.map(p => p.char));
   Stage.setView('follow');
@@ -176,13 +178,13 @@ function renderHand() {
     return;
   }
   const mine = p === cur;
-  const can = mine && S.phase === 'action' && !p.usedCard;
+  const can = mine && S.phase === 'action';
   const slots = [];
   for (let k = 0; k < HAND_MAX; k++) {
     const id = p.cards[k];
     slots.push(id ? cardHTML(id, { i: k, cls: can && CARDS[id].kind !== 'counter' ? 'usable' : '' }) : '<div class="kcard empty"></div>');
   }
-  const note = !mine ? '（反撃カードは こうげきされたら 使える）' : p.usedCard ? '（この番は 使ったよ）' : '1回の番に 1まい';
+  const note = !mine ? '（反撃カードは こうげきされたら 使える）' : p.usedCard ? `（この番 ${p.usedCard}まい 使ったよ）` : 'サイコロの前に 何まいでも';
   box.innerHTML = `<div class="hand-label">${NET ? 'あなた' : esc(p.name)} の カード <small>${note}</small></div><div class="hand-row">${slots.join('')}</div>`;
 }
 function bump(i) { const el = $(`#players .pcard[data-i="${i}"]`); if (el) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); } }
@@ -227,6 +229,9 @@ async function run() {
   const id = gameId, st = S;
   try {
     await wait(600);
+    toast('みんなに カードを 1まい くばったよ！', 'good');
+    sfx('card');
+    await wait(900);
     while (!st.ended) {
       await playTurn(st.players[st.current]);
       chk(id);
@@ -242,7 +247,7 @@ async function run() {
 async function playTurn(p) {
   const id = gameId;
   S.phase = 'busy';
-  p.usedCard = false;
+  p.usedCard = 0;
   p.hint = false;
   p.plan = null;
   Stage.setCurrent(p.i);
@@ -262,7 +267,7 @@ async function playTurn(p) {
     return;
   }
 
-  // カードを使う（1まいまで）か、サイコロをふる
+  // カードを 使う（サイコロの前に 何まいでも。サイコロの カードは 使うと すぐ ふる）か、サイコロをふる
   let mods = { count: 1, six: false, values: null };
   while (true) {
     const act = await waitForAction(p);
@@ -362,7 +367,7 @@ function waitForAction(p) {
     return (async () => {
       setRollReady(false, `${p.name}（CPU）が かんがえ中…`);
       await wait(1200);
-      if (!p.usedCard) {
+      if (p.usedCard < 3) {   // CPU は 1回の番に 3まいまで
         const plan = planCard(S, p);
         if (plan) { p.plan = plan; return { type: 'card', idx: plan.idx }; }
       }
@@ -386,7 +391,7 @@ function waitForAction(p) {
   const local = new Promise(resolve => {
     S.phase = 'action';
     S.actionResolve = a => { S.actionResolve = null; S.phase = 'busy'; setRollReady(false); renderHand(); resolve(a); };
-    const hasUsable = !p.usedCard && p.cards.some(c => CARDS[c].kind !== 'counter');
+    const hasUsable = p.cards.some(c => CARDS[c].kind !== 'counter');
     setRollReady(true, hasUsable ? 'カードを 使うなら、先に カードを タップ' : `${NET ? '' : p.name + ' さん、'}サイコロを ふってね`);
     renderHand();
   }).then(a => { chk(id); return a; });
@@ -412,7 +417,6 @@ export async function tapHandCard(idx) {
   let note = '';
   if (c.kind === 'counter') note = 'このカードは、あいての番に こうげきされたとき 使えます';
   else if (S.phase !== 'action' || p !== S.players[S.current]) note = 'いまは 使えません（自分の番の サイコロの 前に 使えるよ）';
-  else if (p.usedCard) note = 'この番は もう カードを 使ったよ';
   else if (c.target === 'ahead' && !S.players.some(q => q !== p && q.pos > p.pos)) note = '自分より 前に だれも いないので 使えません';
   else if (id === 'warp') {
     const lead = leader(p);
@@ -447,7 +451,7 @@ async function useCard(p, idx) {
     if (pip === null) return { cancel: true };
   }
   p.cards.splice(idx, 1);
-  p.usedCard = true;
+  p.usedCard++;
   p.stats.cardsUsed++;
   paintPlayers();
   renderHand();
