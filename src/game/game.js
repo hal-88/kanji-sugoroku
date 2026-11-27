@@ -761,12 +761,24 @@ async function shop(p, { rest = 0 } = {}) {
 /* ---------- 決闘（部首しんけいすいじゃく） ---------- */
 // 同じマスに 止まったら 決闘。勝った人が ポイントを うばい、負けた人は 2マス もどる
 const DUEL_PTS = 20;
+const DUEL_RATE = 0.5;   // 同じマスに 止まったとき 決闘に なる かくりつ
 // もどり値：true＝番の人が 負けて もどった（このあとの マスの できごとは なし）
 async function maybeDuel(p) {
   if (S.ended || p.pos <= 0 || p.pos >= GOAL) return false;
   const there = S.players.filter(q => q !== p && q.pos === p.pos);
   if (!there.length) return false;
   const foe = there.sort((a, b) => b.points - a.points || a.i - b.i)[0];
+  // 決闘に なるのは 50%（運のたね から 決めるので オンラインでも みんな 同じ）
+  const happen = rand() < DUEL_RATE;
+  await lookAt(foe.i, 200);
+  sfx('turn');
+  await splash(`<div class="vs">${ava(p, 'lg')}<span class="vs-arrow">？</span>${ava(foe, 'lg')}</div><div class="big small">${esc(foe.name)} と 同じマス！ 決闘…？</div>`);
+  if (!happen) {
+    lookBack();
+    toast('今回は 決闘なし！', 'good');
+    await wait(1000);
+    return false;
+  }
   const { winner, pairs, got } = await duel(p, foe);
   const loser = winner === p ? foe : p;
   const amt = Math.min(DUEL_PTS, loser.points);
