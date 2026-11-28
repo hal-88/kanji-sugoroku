@@ -593,5 +593,8 @@ b{font-weight:900}
 .jk-btn.ans{background:#E3F8EA;border-color:#2F9E5B}
 .jk-btn.hit{background:#4CC07A;color:#fff}
 .jk-btn.miss{background:#FF7A7A;color:#fff}
+.sp-mid .jk-base,.sp-mid .jk-blank{width:76px;height:76px;font-size:52px}
+.sp-mid .jk-yomi{margin:8px 0 0}
+.sp-btn.kj{font-family:"Klee One",var(--font);font-weight:600;font-size:34px;min-height:64px}
 .jk-left{text-align:center;font-size:12px;color:var(--ink-2);margin:6px 0 0}
 @media (max-width:560px){ .sp-btns{grid-template-columns:1fr} .sp-btn{min-height:44px;font-size:16px} }
