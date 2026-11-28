@@ -1009,24 +1009,27 @@ async function duelSpeed(a, b, kind = 'yomi') {
   const got = { [a.i]: 0, [b.i]: 0 };
   const recap = [];
   let ctrl = null, tap = null, q = null, ch = null, locked = new Set(), mark = {}, reveal = false, msg = '';
+  let ready = false, popNow = false;   // よーい の あいだは 問題も 選択肢も かくす（出たら すぐ おせる）
   const local = p => !p.cpu && (!NET || NET.isMe(p));
   const sideHTML = (p, cls) => `
     <div class="sp-side ${cls} ${locked.has(p.i) ? 'locked' : ''} ${local(p) ? 'mine' : ''}" style="--c:${charDef(p.char).ui}">
       <div class="sp-who">${ava(p)}<b>${esc(p.name)}</b><i>${got[p.i]}</i></div>
-      <div class="sp-btns">${ch ? ch.list.map((y, k) => `<button type="button" class="sp-btn ${J ? 'kj' : ''} ${reveal && k === ch.ans ? 'ans' : ''} ${mark[p.i] === k ? (k === ch.ans ? 'hit' : 'miss') : ''}" data-p="${p.i}" data-k="${k}">${esc(y)}</button>`).join('') : ''}</div>
+      <div class="sp-btns">${ch ? ch.list.map((y, k) => `<button type="button" class="sp-btn ${J ? 'kj' : ''} ${!ready ? 'wait' : popNow ? 'pop' : ''} ${reveal && k === ch.ans ? 'ans' : ''} ${mark[p.i] === k ? (k === ch.ans ? 'hit' : 'miss') : ''}" data-p="${p.i}" data-k="${k}">${ready ? esc(y) : '？'}</button>`).join('') : ''}</div>
       <div class="sp-note">${locked.has(p.i) ? 'おてつき！ この問題は おしまい' : p.cpu ? 'CPU' : local(p) ? (NET ? 'あなた' : '') : ''}</div>
     </div>`;
   const jukuMid = () => {
     if (!jq) return '';
+    if (!ready) return `<div class="jk-word"><span class="jk-blank">？</span><span class="jk-blank">？</span></div><p class="jk-yomi">読み：<b>……</b></p>`;
     const blank = `<span class="jk-blank ${reveal ? 'open' : ''}">${reveal ? esc(jq.list[jq.ans]) : '？'}</span>`;
     const baseC = `<span class="jk-base">${esc(jq.base)}</span>`;
-    return `<div class="jk-word">${jq.hide ? baseC + blank : blank + baseC}</div><p class="jk-yomi">読み：<b>${esc(jq.q.yomi)}</b></p>`;
+    return `<div class="jk-word ${popNow ? 'pop' : ''}">${jq.hide ? baseC + blank : blank + baseC}</div><p class="jk-yomi">読み：<b>${esc(jq.q.yomi)}</b></p>`;
   };
   const draw = () => {
     ctrl.el.querySelector('.sp-body').innerHTML = `
       ${sideHTML(a, 'left')}
-      <div class="sp-mid">${J ? jukuMid() : `<div class="sp-word">${q ? esc(q.kanji) : ''}</div>`}<p class="sp-msg">${msg}</p></div>
+      <div class="sp-mid">${J ? jukuMid() : `<div class="sp-word ${popNow ? 'pop' : ''}">${q && ready ? esc(q.kanji) : '？'}</div>`}<p class="sp-msg">${msg}</p></div>
       ${sideHTML(b, 'right')}`;
+    popNow = false;   // 飛び出す 動きは 出た ときの 1回だけ
   };
   const done = dlg({
     tone: 'card', cls: 'wide duel-sheet speed-sheet', title: J ? '決闘！ 熟語つなぎ' : '決闘！ 読み早押し対決',
@@ -1057,7 +1060,7 @@ async function duelSpeed(a, b, kind = 'yomi') {
       ch = readingChoices(q);
     }
     used.add(q.kanji);
-    locked = new Set(); mark = {}; reveal = false; msg = 'よーい…';
+    locked = new Set(); mark = {}; reveal = false; ready = false; msg = 'よーい…';
     // CPU が おす 時間と おす 読み（運のたね から 決めるので オンラインでも 同じ）
     const plan = {};
     for (const p of [a, b]) if (p.cpu) {
@@ -1068,9 +1071,10 @@ async function duelSpeed(a, b, kind = 'yomi') {
     }
     draw();
     sfx('turn');
-    await wait(900);
+    await wait(1000);
+    ready = true; popNow = true;
     msg = 'どっちが はやい？';
-    draw();
+    sfx('turn');
     const t0 = performance.now();
     let result = null;
     while (result === null) {

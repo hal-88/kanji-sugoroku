@@ -565,6 +565,9 @@ b{font-weight:900}
 .sp-btn{min-height:58px;border:3px solid var(--ink);border-radius:14px;background:#fff;font-weight:900;font-size:17px;box-shadow:0 4px 0 var(--ink);padding:4px;word-break:break-all}
 .sp-side:not(.mine) .sp-btn{cursor:default}
 .sp-side.mine:not(.locked) .sp-btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.sp-btn.wait{color:#C9BFD6}
+.sp-btn.pop,.sp-word.pop,.jk-word.pop{animation:spPop .22s cubic-bezier(.3,1.6,.5,1)}
+@keyframes spPop{from{transform:scale(.6);opacity:.2}to{transform:none;opacity:1}}
 .sp-btn.ans{background:#E3F8EA;border-color:#2F9E5B}
 .sp-btn.hit{background:#4CC07A;color:#fff}
 .sp-btn.miss{background:#FF7A7A;color:#fff}
