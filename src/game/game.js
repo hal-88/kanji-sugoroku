@@ -6,7 +6,7 @@ import { GOAL, charDef } from '../three/stage.js';
 import { main, ABORT } from '../ui/dialog.js';
 import { rollDice } from '../ui/dice.js';
 import { sfx } from '../sfx.js';
-import { makeBag, isCorrect, hasKanji, pointsFor } from './questions.js';
+import { makeBag, isCorrect, hasKanji, pointsFor, QUESTIONS, normalize } from './questions.js';
 import { CARDS, HAND_MAX, drawCard, shopItems, cardHTML, backHTML, timingText, miniDie } from './cards.js';
 import { planAnswer, planCard, planCounter, planShop, planDiscard } from './cpu.js';
 import { rand, seedRng, newSeed } from './rng.js';
@@ -105,6 +105,8 @@ if (import.meta.env.DEV) {
     shop: i => shop(S.players[i]).catch(() => {}),
     cardTile: i => cardTile(S.players[i]).catch(() => {}),
     duelIntro: (i, j) => duelIntro(S.players[i], S.players[j]).catch(() => {}),
+    // 確認用：__dev.duel(0, 1, 'speed')（'memory'／'speed'／'jukugo'）
+    duel: (i, j, g) => (DUEL_GAMES.find(x => x.id === g) || DUEL_GAMES[0]).run(S.players[i], S.players[j]).then(r => { console.log('決闘', r.winner.name, r.got); return r; }).catch(() => {}),
     state: () => S,
   };
 }
@@ -758,8 +760,13 @@ async function shop(p, { rest = 0 } = {}) {
 }
 
 
-/* ---------- 決闘（部首しんけいすいじゃく） ---------- */
-// 同じマスに 止まったら 決闘。勝った人が ポイントを うばい、負けた人は 2マス もどる
+/* ---------- 決闘（ミニゲーム3つから ランダム） ---------- */
+// 同じマスに 止まったら 50%で 決闘。勝った人が ポイントを うばい、負けた人は 2マス もどる
+const DUEL_GAMES = [
+  { id: 'memory', name: '部首しんけいすいじゃく', run: (a, b) => duelMemory(a, b) },
+  { id: 'speed', name: '読み早押し対決', run: (a, b) => duelSpeed(a, b) },
+  { id: 'jukugo', name: '熟語つなぎ', run: (a, b) => duelJukugo(a, b) },
+];
 const DUEL_PTS = 20;
 const DUEL_RATE = 0.5;   // 同じマスに 止まったとき 決闘に なる かくりつ
 // もどり値：true＝番の人が 負けて もどった（このあとの マスの できごとは なし）
@@ -779,10 +786,14 @@ async function maybeDuel(p) {
     await wait(1000);
     return false;
   }
-  const { winner, pairs, got } = await duel(p, foe);
+  const game = DUEL_GAMES[Math.floor(rand() * DUEL_GAMES.length)];
+  await lookAt(foe.i, 300);
+  await duelIntro(p, foe, game.name);
+  lookBack();
+  const { winner, got, recap } = await game.run(p, foe);
   const loser = winner === p ? foe : p;
   const amt = Math.min(DUEL_PTS, loser.points);
-  const list = pairs.map(x => `<span class="dl-made"><b>${x.bushu}</b><small>${x.name}</small>＋<b>${x.rest}</b>＝<em>${x.kanji}</em></span>`).join('');
+  const list = recap;
   sfx('win');
   await dlg(au({
     tone: 'good', title: `${esc(winner.name)} の かち！`,
@@ -808,7 +819,7 @@ async function maybeDuel(p) {
 }
 
 // 決闘の はじまり：画面いっぱいの 演出（光の すじ・左右から 登場・VSで ぶつかる・決闘！！が ドーン）
-async function duelIntro(a, b) {
+async function duelIntro(a, b, sub = '部首しんけいすいじゃく') {
   let el = $('#duel-intro');
   if (!el) { el = document.createElement('div'); el.id = 'duel-intro'; document.body.append(el); }
   const side = (p, cls) => `
@@ -830,7 +841,7 @@ async function duelIntro(a, b) {
       <div class="di-sparks">${sparks}</div>
       <div class="di-flash"></div>
       <div class="di-title">決闘!!</div>
-      <div class="di-sub">部首しんけいすいじゃく</div>
+      <div class="di-sub">${sub}</div>
     </div>`;
   el.className = 'show';
   void el.offsetWidth;
@@ -843,11 +854,9 @@ async function duelIntro(a, b) {
   el.innerHTML = '';
 }
 
-async function duel(a, b) {
+// 部首しんけいすいじゃく
+async function duelMemory(a, b) {
   const id = gameId;
-  await lookAt(b.i, 300);
-  await duelIntro(a, b);
-  lookBack();
   const pairs = pickPairs(S.settings.grade);
   const cards = makeBoard(pairs);
   const taken = Array(cards.length).fill(-1);   // とった人の 番号
@@ -954,7 +963,254 @@ async function duel(a, b) {
   const winner = got[a.i] > got[b.i] ? a : b;
   ctrl.finish(true);
   await done;
-  return { winner, pairs, got };
+  const recap = pairs.map(x => `<span class="dl-made"><b>${x.bushu}</b><small>${x.name}</small>＋<b>${x.rest}</b>＝<em>${x.kanji}</em></span>`).join('');
+  return { winner, got, recap };
+}
+
+/* ---------- 決闘のミニゲーム：読み早押し対決 ---------- */
+// 同じ ことばを 2人で 見て、4つの 読みから 先に 正しい ものを おした人が 1点。3点 先取（さいだい 9問）
+const SPEED_WIN = 3, SPEED_MAX = 9, SPEED_LIMIT = 10000;
+function readingChoices(q) {
+  const ok = normalize(q.yomi), len = Array.from(q.yomi).length;
+  const pool = Object.values(QUESTIONS).flat().map(x => x.yomi)
+    .filter(y => Math.abs(Array.from(y).length - len) <= 1 && normalize(y) !== ok);
+  const out = [];
+  for (let t = 0; out.length < 3 && t < 200; t++) {
+    const y = pool[Math.floor(rand() * pool.length)];
+    if (!out.some(z => normalize(z) === normalize(y))) out.push(y);
+  }
+  const all = [q.yomi, ...out];
+  for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
+  return { list: all, ans: all.indexOf(q.yomi) };
+}
+async function duelSpeed(a, b) {
+  const id = gameId;
+  const pool = QUESTIONS[S.settings.grade];
+  const used = new Set();
+  const got = { [a.i]: 0, [b.i]: 0 };
+  const recap = [];
+  let ctrl = null, tap = null, q = null, ch = null, locked = new Set(), mark = {}, reveal = false, msg = '';
+  const local = p => !p.cpu && (!NET || NET.isMe(p));
+  const sideHTML = (p, cls) => `
+    <div class="sp-side ${cls} ${locked.has(p.i) ? 'locked' : ''} ${local(p) ? 'mine' : ''}" style="--c:${charDef(p.char).ui}">
+      <div class="sp-who">${ava(p)}<b>${esc(p.name)}</b><i>${got[p.i]}</i></div>
+      <div class="sp-btns">${ch ? ch.list.map((y, k) => `<button type="button" class="sp-btn ${reveal && k === ch.ans ? 'ans' : ''} ${mark[p.i] === k ? (k === ch.ans ? 'hit' : 'miss') : ''}" data-p="${p.i}" data-k="${k}">${esc(y)}</button>`).join('') : ''}</div>
+      <div class="sp-note">${locked.has(p.i) ? 'おてつき！ この問題は おしまい' : p.cpu ? 'CPU' : local(p) ? (NET ? 'あなた' : '') : ''}</div>
+    </div>`;
+  const draw = () => {
+    ctrl.el.querySelector('.sp-body').innerHTML = `
+      ${sideHTML(a, 'left')}
+      <div class="sp-mid"><div class="sp-word">${q ? esc(q.kanji) : ''}</div><p class="sp-msg">${msg}</p></div>
+      ${sideHTML(b, 'right')}`;
+  };
+  const done = dlg({
+    tone: 'card', cls: 'wide duel-sheet speed-sheet', title: '決闘！ 読み早押し対決',
+    body: `<div class="sp-body"></div><p class="dl-rule">正しい 読みを 先に おした人が 1点！ まちがえると その問題は おしまい。${SPEED_WIN}点 とったら かち</p>`,
+    buttons: [],
+    mount: (el, finish) => {
+      ctrl = { el, finish };
+      el.addEventListener('click', e => {
+        const btn = e.target.closest('.sp-btn');
+        if (!btn || !tap) return;
+        const pi = Number(btn.dataset.p);
+        const pl = S.players[pi];
+        if (!local(pl) || locked.has(pi)) return;
+        tap(pi, Number(btn.dataset.k));
+      });
+    },
+  });
+  done.catch(() => {});
+  const guard = pr => Promise.race([pr, done.then(() => { throw new Abort(); })]);
+  for (let round = 0; round < SPEED_MAX && Math.max(got[a.i], got[b.i]) < SPEED_WIN; round++) {
+    do { q = pool[Math.floor(rand() * pool.length)]; } while (used.has(q.kanji) && used.size < pool.length);
+    used.add(q.kanji);
+    ch = readingChoices(q);
+    locked = new Set(); mark = {}; reveal = false; msg = 'よーい…';
+    // CPU が おす 時間と おす 読み（運のたね から 決めるので オンラインでも 同じ）
+    const plan = {};
+    for (const p of [a, b]) if (p.cpu) {
+      const t = [0, 3800 + rand() * 2500, 2600 + rand() * 2000, 1500 + rand() * 1400][p.cpu];
+      const right = rand() < [0, 0.6, 0.8, 0.93][p.cpu];
+      const wrong = [0, 1, 2, 3].filter(k => k !== ch.ans);
+      plan[p.i] = { t, k: right ? ch.ans : wrong[Math.floor(rand() * wrong.length)] };
+    }
+    draw();
+    sfx('turn');
+    await wait(900);
+    msg = 'どっちが はやい？';
+    draw();
+    const t0 = performance.now();
+    let result = null;
+    while (result === null) {
+      const timers = [];
+      const mine = new Promise(res => {
+        tap = (pi, k) => res({ k: 'buzz', v: { who: pi, c: k } });
+        for (const p of [a, b]) if (p.cpu && !locked.has(p.i)) {
+          timers.push(setTimeout(() => res({ k: 'buzz', v: { who: p.i, c: plan[p.i].k } }), Math.max(0, plan[p.i].t - (performance.now() - t0))));
+        }
+        timers.push(setTimeout(() => res({ k: 'buzz', v: { who: -1 } }), Math.max(0, SPEED_LIMIT - (performance.now() - t0))));
+      });
+      draw();
+      const e = NET ? await guard(NET.race(mine)) : await guard(mine);
+      tap = null;
+      timers.forEach(clearTimeout);
+      chk(id);
+      if (!e) throw new Abort();
+      const { who, c } = e.v;
+      if (who < 0) { result = 'timeout'; break; }
+      if (locked.has(who) || got[who] === undefined) continue;
+      mark[who] = c;
+      if (c === ch.ans) {
+        got[who]++;
+        result = who;
+        sfx('good');
+        msg = `${esc(S.players[who].name)} が 1点！`;
+      } else {
+        locked.add(who);
+        sfx('bad');
+        msg = `${esc(S.players[who].name)} は おてつき…`;
+        if (locked.size === 2) result = 'none';
+      }
+      draw();
+    }
+    reveal = true;
+    if (result === 'timeout' || result === 'none') msg = `${result === 'timeout' ? '時間ぎれ！' : 'ふたりとも おてつき…'}`;
+    msg += `<br><span class="sp-ans"><ruby>${esc(q.kanji)}<rt>${esc(q.yomi)}</rt></ruby></span>`;
+    draw();
+    recap.push(`<span class="dl-made"><em>${esc(q.kanji)}</em>（${esc(q.yomi)}）</span>`);
+    await wait(1900);
+  }
+  const winner = got[a.i] > got[b.i] ? a : got[b.i] > got[a.i] ? b : (rand() < 0.5 ? a : b);
+  ctrl.finish(true);
+  await done;
+  return { winner, got, recap: recap.join('') };
+}
+
+/* ---------- 決闘のミニゲーム：熟語つなぎ ---------- */
+// まん中の 漢字に、4つの 中から 1つを つないで ことばを 作る。交代で 3問ずつ、多く できた人の かち
+// 読みを ヒントに 出す（まちがいの 漢字が たまたま べつの ことばに なっても、読みで 答えは 1つに きまる）
+const JUKU_TURNS = 3, JUKU_LIMIT = 15000;
+function jukugoQuestion(used) {
+  const isK = c => c >= '一' && c <= '鿿';
+  const pool = QUESTIONS[S.settings.grade].filter(x => Array.from(x.kanji).length === 2 && Array.from(x.kanji).every(isK) && !used.has(x.kanji));
+  const allWords = new Set(Object.values(QUESTIONS).flat().map(x => x.kanji));
+  const chars = [...new Set(QUESTIONS[S.settings.grade].flatMap(x => Array.from(x.kanji).filter(isK)))];
+  for (let t = 0; t < 100; t++) {
+    const q = pool[Math.floor(rand() * pool.length)];
+    const [k0, k1] = Array.from(q.kanji);
+    const hide = rand() < 0.5 ? 0 : 1;
+    const base = hide ? k0 : k1, ans = hide ? k1 : k0;
+    const make = c => (hide ? base + c : c + base);
+    const wrong = [];
+    for (let u = 0; wrong.length < 3 && u < 300; u++) {
+      const c = chars[Math.floor(rand() * chars.length)];
+      if (c === ans || c === base || wrong.includes(c) || allWords.has(make(c))) continue;
+      wrong.push(c);
+    }
+    if (wrong.length < 3) continue;
+    const list = [ans, ...wrong];
+    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+    return { q, base, hide, list, ans: list.indexOf(ans) };
+  }
+  return null;
+}
+async function duelJukugo(a, b) {
+  const id = gameId;
+  const used = new Set();
+  const got = { [a.i]: 0, [b.i]: 0 };
+  const recap = [];
+  let ctrl = null, tap = null, jq = null, turn = a, picked = -1, reveal = false, msg = '', left = 0;
+  const local = p => !p.cpu && (!NET || NET.isMe(p));
+  const head = () => `
+    <div class="dl-head">
+      <span class="dl-p ${turn === a ? 'now' : ''}">${ava(a)}<b>${esc(a.name)}</b><i>${got[a.i]}</i></span>
+      <span class="dl-vs">VS</span>
+      <span class="dl-p ${turn === b ? 'now' : ''}">${ava(b)}<b>${esc(b.name)}</b><i>${got[b.i]}</i></span>
+    </div>`;
+  const draw = () => {
+    const blank = `<span class="jk-blank ${reveal ? 'open' : ''}">${reveal ? esc(jq.list[jq.ans]) : '？'}</span>`;
+    const baseC = `<span class="jk-base">${esc(jq.base)}</span>`;
+    ctrl.el.querySelector('.jk-body').innerHTML = `
+      ${head()}
+      <p class="dl-msg">${msg}</p>
+      <div class="jk-word">${jq.hide ? baseC + blank : blank + baseC}</div>
+      <p class="jk-yomi">${reveal ? `${esc(jq.q.kanji)}（${esc(jq.q.yomi)}）` : `読み：<b>${esc(jq.q.yomi)}</b>`}</p>
+      <div class="jk-btns ${tap ? 'can' : ''}">${jq.list.map((c, k) => `<button type="button" class="jk-btn ${reveal && k === jq.ans ? 'ans' : ''} ${picked === k ? (k === jq.ans ? 'hit' : 'miss') : ''}" data-k="${k}">${esc(c)}</button>`).join('')}</div>
+      ${left ? `<p class="jk-left">あと ${left}問ずつ</p>` : ''}`;
+  };
+  const done = dlg({
+    tone: 'card', cls: 'wide duel-sheet', title: '決闘！ 熟語つなぎ',
+    body: `<div class="jk-body"></div><p class="dl-rule">読みを ヒントに、？に 入る 漢字を えらんで ことばを 作ろう！ 交代で ${JUKU_TURNS}問ずつ、多く 作った人の かち</p>`,
+    buttons: [],
+    mount: (el, finish) => {
+      ctrl = { el, finish };
+      el.addEventListener('click', e => {
+        const btn = e.target.closest('.jk-btn');
+        if (btn && tap) tap(Number(btn.dataset.k));
+      });
+    },
+  });
+  done.catch(() => {});
+  const guard = pr => Promise.race([pr, done.then(() => { throw new Abort(); })]);
+  async function answer(p) {
+    for (;;) {
+      if (p.cpu) {
+        await wait(1500 + rand() * 1500);
+        const right = rand() < [0, 0.55, 0.75, 0.9][p.cpu];
+        const wrong = [0, 1, 2, 3].filter(k => k !== jq.ans);
+        return right ? jq.ans : wrong[Math.floor(rand() * wrong.length)];
+      }
+      if (local(p)) {
+        let timer = 0;
+        const pr = new Promise(r => { tap = k => r(k); timer = setTimeout(() => r(-1), JUKU_LIMIT); });
+        draw();
+        const k = await guard(pr);
+        clearTimeout(timer);
+        tap = null;
+        chk(id);
+        if (!NET) return k;
+        const e = await NET.commit('juku', k);
+        chk(id);
+        if (e.k === 'leave') { leaveTo(e); continue; }
+        return e.v;
+      }
+      const e = await guard(NET.next(p));
+      chk(id);
+      if (e.k === 'leave') { leaveTo(e); continue; }
+      return e.v;
+    }
+  }
+  const total = JUKU_TURNS * 2;
+  for (let n = 0; n < total + 6; n++) {
+    if (n >= total && n % 2 === 0 && got[a.i] !== got[b.i]) break;   // 同点なら 1問ずつ 追加（さいだい 3回）
+    if (n === total + 6) break;
+    turn = n % 2 === 0 ? a : b;
+    jq = jukugoQuestion(used);
+    if (!jq) break;
+    used.add(jq.q.kanji);
+    picked = -1; reveal = false;
+    left = n < total ? JUKU_TURNS - Math.floor(n / 2) : 0;
+    msg = local(turn) ? `${NET ? 'あなた' : esc(turn.name) + ' さん'}の 番：？に 入る 漢字は？` : `${esc(turn.name)}${turn.cpu ? '（CPU）' : ' さん'}が かんがえ中…`;
+    draw();
+    const k = await answer(turn);
+    picked = k;
+    reveal = true;
+    if (k === jq.ans) {
+      got[turn.i]++;
+      sfx('good');
+      msg = `せいかい！ ${esc(turn.name)} が 1点`;
+    } else {
+      sfx('bad');
+      msg = k < 0 ? '時間ぎれ…' : 'ざんねん…';
+    }
+    draw();
+    recap.push(`<span class="dl-made"><em>${esc(jq.q.kanji)}</em>（${esc(jq.q.yomi)}）</span>`);
+    await wait(1900);
+  }
+  const winner = got[a.i] > got[b.i] ? a : got[b.i] > got[a.i] ? b : (rand() < 0.5 ? a : b);
+  ctrl.finish(true);
+  await done;
+  return { winner, got, recap: recap.join('') };
 }
 
 /* ---------- マスのできごと ---------- */

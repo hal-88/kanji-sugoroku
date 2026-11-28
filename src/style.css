@@ -551,3 +551,47 @@ b{font-weight:900}
 @media (prefers-reduced-motion: reduce){
   #duel-intro.go *{animation-duration:.01s !important;animation-delay:0s !important}
 }
+
+/* ---------- 決闘：読み早押し対決 ---------- */
+.speed-sheet{width:min(860px,100%)}
+.sp-body{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch}
+.sp-side{border:3px solid var(--ink);border-radius:20px;padding:8px;background:color-mix(in srgb, var(--c) 18%, #fff);display:flex;flex-direction:column;gap:8px}
+.sp-side.locked{opacity:.45;filter:grayscale(.6)}
+.sp-who{display:flex;align-items:center;gap:6px;justify-content:center}
+.sp-who .ava{width:34px;height:34px}
+.sp-who b{font-size:15px;max-width:6em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-who i{font-style:normal;font-family:var(--pop);font-size:24px;color:#E8A100;-webkit-text-stroke:.6px var(--ink)}
+.sp-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sp-btn{min-height:58px;border:3px solid var(--ink);border-radius:14px;background:#fff;font-weight:900;font-size:17px;box-shadow:0 4px 0 var(--ink);padding:4px;word-break:break-all}
+.sp-side:not(.mine) .sp-btn{cursor:default}
+.sp-side.mine:not(.locked) .sp-btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.sp-btn.ans{background:#E3F8EA;border-color:#2F9E5B}
+.sp-btn.hit{background:#4CC07A;color:#fff}
+.sp-btn.miss{background:#FF7A7A;color:#fff}
+.sp-note{text-align:center;font-size:12px;font-weight:900;color:var(--ink-2);min-height:1.2em}
+.sp-mid{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:150px}
+.sp-word{font-family:"Klee One",var(--font);font-weight:600;font-size:56px;line-height:1.1;border:4px solid var(--ink);border-radius:18px;background:#FFFBEF;padding:6px 14px;box-shadow:0 5px 0 var(--ink);white-space:nowrap}
+.sp-msg{text-align:center;font-weight:900;margin:10px 0 0;min-height:3.2em}
+.sp-ans{font-family:"Klee One",var(--font);font-size:26px}
+.sp-ans rt{font-size:13px}
+@media (max-width:760px){
+  .sp-body{grid-template-columns:1fr 1fr}
+  .sp-mid{grid-column:1 / -1;order:-1}
+  .sp-word{font-size:44px}
+}
+/* ---------- 決闘：熟語つなぎ ---------- */
+.jk-word{display:flex;justify-content:center;gap:6px;margin:4px 0}
+.jk-base,.jk-blank{width:92px;height:92px;display:grid;place-items:center;border:4px solid var(--ink);border-radius:18px;font-family:"Klee One",var(--font);font-weight:600;font-size:64px;box-shadow:0 5px 0 var(--ink);background:#FFFBEF}
+.jk-blank{background:#EEF6FF;color:#4FA8FF;border-style:dashed}
+.jk-blank.open{border-style:solid;color:var(--red);background:#fff;animation:chanceHit .4s cubic-bezier(.3,1.8,.5,1)}
+.jk-yomi{text-align:center;font-weight:900;min-height:1.4em;margin:6px 0;font-size:17px}
+.jk-yomi b{font-size:24px;color:#4FA8FF;letter-spacing:.06em}
+.jk-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;max-width:420px;margin:0 auto}
+.jk-btn{aspect-ratio:1;border:3px solid var(--ink);border-radius:16px;background:#fff;font-family:"Klee One",var(--font);font-weight:600;font-size:40px;box-shadow:0 4px 0 var(--ink);cursor:default}
+.jk-btns.can .jk-btn{cursor:pointer}
+.jk-btns.can .jk-btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.jk-btn.ans{background:#E3F8EA;border-color:#2F9E5B}
+.jk-btn.hit{background:#4CC07A;color:#fff}
+.jk-btn.miss{background:#FF7A7A;color:#fff}
+.jk-left{text-align:center;font-size:12px;color:var(--ink-2);margin:6px 0 0}
+@media (max-width:560px){ .sp-btns{grid-template-columns:1fr} .sp-btn{min-height:44px;font-size:16px} }

@@ -189,6 +189,12 @@ export async function makeNet(code, round) {
     },
     /** p さんが えらぶのを 待つ（{ k, v } が 返る） */
     next(p) { return entryAt(cursor++, p); },
+    /** 早い者勝ち（読み早押し）：mine が { k, v } に なったら 書いてみる。だれかが 先に 書いたら そちらが 返る */
+    race(mine) {
+      const n = cursor++;
+      mine.then(e => { if (e) db.claim(`${base}/${n}`, e); }).catch(() => {});
+      return entryAt(n, null);
+    },
     stop() { offM(); [...offs].forEach(f => f()); },
   };
 }
